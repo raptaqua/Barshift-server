@@ -74,7 +74,7 @@ function handleAdminApi(string $method, string $rel): never {
 
     // ----- Baarit -----
     if ($method === 'GET' && $rel === '/pubs') {
-        out(['pubs' => rows(q("SELECT p.id, p.slug, p.name, p.city, p.status, p.created_at, p.last_seen_at,
+        out(['pubs' => rows(q("SELECT p.id, p.slug, p.name, p.city, p.address, p.lat, p.lng, p.website, p.status, p.created_at, p.last_seen_at,
             (SELECT COUNT(*) FROM events e WHERE e.pub_id = p.id AND e.date >= CURDATE()) AS events,
             (SELECT COUNT(*) FROM shifts s WHERE s.pub_id = p.id AND s.status = 'open' AND s.date >= CURDATE()) AS open_shifts, (p.public_key <> '') AS paired, (p.pair_hash IS NOT NULL AND p.pair_expires > NOW()) AS code_valid FROM pubs p ORDER BY p.name"))]);
     }
@@ -91,7 +91,14 @@ function handleAdminApi(string $method, string $rel): never {
         $id = (int)$m[1]; if (!one(q("SELECT id FROM pubs WHERE id = ?", 'i', [$id]))) fail('Ei löydy', 404);
         if ($method === 'PUT') {
             $d = body(); $name = str($d['name'] ?? null, 120, 'name', true); $city = (string)str($d['city'] ?? null, 80, 'city');
-            $status = $d['status'] ?? 'active'; if (!in_array($status, ['active', 'suspended'], true)) fail('Virheellinen tila');
+            if (array_key_exists('address', $d) || array_key_exists('lat', $d)) {   // sijaintitiedot (kartta)
+                $addr = str($d['address'] ?? null, 200, 'address'); $site = safeUrl($d['website'] ?? null);
+                $lat = ($d['lat'] ?? '') === '' ? null : $d['lat']; $lng = ($d['lng'] ?? '') === '' ? null : $d['lng'];
+                if ($lat !== null || $lng !== null) { if (!is_numeric($lat) || !is_numeric($lng) || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) fail('Virheelliset koordinaatit'); $lat = round((float)$lat, 6); $lng = round((float)$lng, 6); }
+                q("UPDATE pubs SET address = ?, lat = ?, lng = ?, website = ? WHERE id = ?", 'sddsi', [$addr, $lat, $lng, $site, $id]);
+            }
+            $status = $d['status'] ?? 'active'; if (!in_array($status, ['active', 'suspended', 'pending'], true)) fail('Virheellinen tila');
+            if ($status === 'pending' && one(q("SELECT id FROM pubs WHERE id = ? AND public_key <> ''", 'i', [$id]))) fail('Liitetty baari ei voi palata odottamaan');
             if ($status === 'active' && one(q("SELECT id FROM pubs WHERE id = ? AND public_key = ''", 'i', [$id]))) fail('Baari ei ole vielä liitetty: anna sille liitoskoodi');
             q("UPDATE pubs SET name = ?, city = ?, status = ? WHERE id = ?", 'sssi', [$name, $city, $status, $id]); out(['success' => true]);
         }

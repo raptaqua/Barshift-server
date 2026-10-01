@@ -1,11 +1,13 @@
 // Julkinen tapahtumakalenteri (jaettava ja upotettava). Osoitteet lasketaan sivun omasta polusta → toimii alihakemistossakin.
-// Osoiteparametrit: ?city=Turku &type=music,quiz &q=haku &view=cal &embed=1 (ei otsikkoa, sopii iframeen)
+// Osoiteparametrit: ?city=Turku &type=music,quiz &q=haku &view=cal|map &range=7|weekend|30 &sort=theme|pub &embed=1 (ei otsikkoa, sopii iframeen)
 const API = location.pathname.replace(/\/(index\.html)?$/, '');
 const $ = id => document.getElementById(id);
 const TYPES = { music: ['🎵', 'Musiikki', ['#8B5CF6', '#EC4899']], sports: ['⚽', 'Urheilu', ['#10B981', '#84CC16']], quiz: ['🧠', 'Visa / peli', ['#3B82F6', '#06B6D4']], theme: ['🎉', 'Teemailta', ['#FF9A3C', '#FF5A36']], other: ['📌', 'Muu', ['#64748B', '#94A3B8']] };
 const MONTHS = ['tammikuu', 'helmikuu', 'maaliskuu', 'huhtikuu', 'toukokuu', 'kesäkuu', 'heinäkuu', 'elokuu', 'syyskuu', 'lokakuu', 'marraskuu', 'joulukuu'];
 const DOWL = ['sunnuntai', 'maanantai', 'tiistai', 'keskiviikko', 'torstai', 'perjantai', 'lauantai'], DOW = ['Ma', 'Ti', 'Ke', 'To', 'Pe', 'La', 'Su'], MON3 = ['tammi', 'helmi', 'maalis', 'huhti', 'touko', 'kesä', 'heinä', 'elo', 'syys', 'loka', 'marras', 'joulu'];
-const S = { events: [], cities: [], city: '', types: new Set(), q: '', view: 'list', month: null, sel: null };
+const S = { events: [], cities: [], city: '', types: new Set(), q: '', view: 'list', month: null, sel: null, range: 'all', sort: 'day', map: null };
+const RANGES = [['all', 'Kaikki tulevat'], ['7', '7 päivää'], ['weekend', 'Viikonloppu'], ['30', '30 päivää']];
+const SORTS = [['day', 'Päivän mukaan'], ['theme', 'Teeman mukaan'], ['pub', 'Baarin mukaan']];
 const typeOf = t => TYPES[t] || TYPES.other;
 const grad = t => `linear-gradient(135deg,${typeOf(t)[2][0]},${typeOf(t)[2][1]})`;
 const pad = n => String(n).padStart(2, '0');
@@ -14,7 +16,7 @@ const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date
 const hm = t => (t || '').slice(0, 5);
 function el(tag, props, ...kids) {
     const e = document.createElement(tag);
-    for (const [k, v] of Object.entries(props || {})) { if (k === 'class') e.className = v; else if (k === 'style') e.style.cssText = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
+    for (const [k, v] of Object.entries(props || {})) { if (k === 'class') e.className = v; else if (k === 'style') e.style.cssText = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else if (k.startsWith('aria-')) e.setAttribute(k, String(!!v)); else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v); }
     for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
     return e;
 }
@@ -25,13 +27,21 @@ async function getJson(path) {
     return j;
 }
 function timeText(e) { const a = hm(e.time_start), b = hm(e.time_end); return a ? (b ? `klo ${a}–${b}` : `klo ${a}`) : ''; }
-function filtered() {
-    const q = S.q.trim().toLowerCase();
-    return S.events.filter(e => (!S.city || e.city === S.city) && (!S.types.size || S.types.has(TYPES[e.type] ? e.type : 'other')) && (!q || (e.title + ' ' + e.pub + ' ' + (e.city || '') + ' ' + (e.description || '')).toLowerCase().includes(q)));
+function rangeBounds() {   // [alku, loppu] päivämerkkijonoina tai null (kaikki)
+    const now = new Date(), t = new Date(now.getFullYear(), now.getMonth(), now.getDate()), add = n => ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + n));
+    if (S.range === '7') return [add(0), add(6)];
+    if (S.range === '30') return [add(0), add(29)];
+    if (S.range === 'weekend') { const d = t.getDay(); if (d === 0) return [add(0), add(0)]; if (d === 6) return [add(0), add(1)]; return [add(5 - d), add(7 - d)]; }
+    return null;
+}
+function filtered(useRange = true) {
+    const q = S.q.trim().toLowerCase(), rb = useRange ? rangeBounds() : null;
+    return S.events.filter(e => (!S.city || e.city === S.city) && (!S.types.size || S.types.has(TYPES[e.type] ? e.type : 'other')) && (!rb || (e.date >= rb[0] && e.date <= rb[1]))
+        && (!q || (e.title + ' ' + e.pub + ' ' + (e.city || '') + ' ' + (e.description || '') + ' ' + typeOf(e.type)[1]).toLowerCase().includes(q)));
 }
 function syncUrl() {
     const p = new URLSearchParams(location.search);
-    for (const [k, v] of [['city', S.city], ['type', [...S.types].join(',')], ['q', S.q.trim()], ['view', S.view === 'cal' ? 'cal' : '']]) { if (v) p.set(k, v); else p.delete(k); }
+    for (const [k, v] of [['city', S.city], ['type', [...S.types].join(',')], ['q', S.q.trim()], ['view', S.view === 'list' ? '' : S.view], ['range', S.range === 'all' ? '' : S.range], ['sort', S.sort === 'day' ? '' : S.sort]]) { if (v) p.set(k, v); else p.delete(k); }
     history.replaceState(null, '', location.pathname + (p.toString() ? '?' + p : ''));
 }
 
@@ -47,19 +57,47 @@ function renderToolbar() {
     if (S.cities.length > 1) tb.append(el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Kaupunki'),
         el('button', { class: 'chip', 'aria-pressed': !S.city, onclick: () => { S.city = ''; refresh(); } }, 'Kaikki'),
         S.cities.map(c => el('button', { class: 'chip', 'aria-pressed': S.city === c, onclick: () => { S.city = S.city === c ? '' : c; refresh(); } }, c))));
+    if (S.view !== 'cal') tb.append(el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Aika'), RANGES.map(([k, l]) => el('button', { class: 'chip', 'aria-pressed': S.range === k, onclick: () => { S.range = k; refresh(); } }, l))));
+    if (S.view === 'list') tb.append(el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Järjestys'), SORTS.map(([k, l]) => el('button', { class: 'chip', 'aria-pressed': S.sort === k, onclick: () => { S.sort = k; refresh(); } }, l))));
     const used = [...new Set(S.events.map(e => TYPES[e.type] ? e.type : 'other'))];
     if (used.length > 1) tb.append(el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Tyyppi'),
         used.map(t => el('button', { class: 'chip', style: `--c:${typeOf(t)[2][0]}`, 'aria-pressed': S.types.has(t), onclick: () => { S.types.has(t) ? S.types.delete(t) : S.types.add(t); refresh(); } }, el('span', { class: 'dot' }), typeOf(t)[0] + ' ' + typeOf(t)[1]))));
 }
 function renderList(box, rows) {
-    if (!rows.length) { box.append(el('div', { class: 'empty' }, el('div', { class: 'big' }, '🍻'), el('h2', {}, 'Ei tapahtumia'), el('p', {}, S.events.length ? 'Kokeile toista hakua tai poista suodattimia.' : 'Tulevia tapahtumia ei ole vielä julkaistu.'))); return; }
-    const today = ymd(new Date()), tmr = ymd(new Date(Date.now() + 864e5)); const byDay = new Map();
-    for (const e of rows) { if (!byDay.has(e.date)) byDay.set(e.date, []); byDay.get(e.date).push(e); }
-    for (const [date, evs] of byDay) {
-        const d = parse(date);
-        box.append(el('section', { class: 'dayblock' }, el('div', { class: 'dh' }, el('h2', {}, `${DOWL[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`), date === today ? el('span', { class: 'tag' }, 'Tänään') : date === tmr ? el('span', { class: 'tag tmr' }, 'Huomenna') : null, el('span', { class: 'cnt' }, evs.length + (evs.length === 1 ? ' tapahtuma' : ' tapahtumaa'))),
-            el('div', { class: 'tiles' }, evs.map(tile))));
+    if (!rows.length) { box.append(el('div', { class: 'empty' }, el('div', { class: 'big' }, '🍻'), el('h2', {}, 'Ei tapahtumia'), el('p', {}, S.events.length ? 'Kokeile toista hakua tai aikaväliä, tai poista suodattimia.' : 'Tulevia tapahtumia ei ole vielä julkaistu.'))); return; }
+    const today = ymd(new Date()), tmr = ymd(new Date(Date.now() + 864e5)), groups = new Map();
+    const add = (key, e, head) => { if (!groups.has(key)) groups.set(key, { head, evs: [] }); groups.get(key).evs.push(e); };
+    for (const e of rows) {
+        if (S.sort === 'theme') { const k = TYPES[e.type] ? e.type : 'other'; add(k, e, () => [el('h2', {}, typeOf(k)[0] + ' ' + typeOf(k)[1])]); }
+        else if (S.sort === 'pub') add(e.pub, e, () => [el('h2', {}, '📍 ' + e.pub), e.city ? el('span', { class: 'cnt' }, e.city) : null]);
+        else { const d = parse(e.date); add(e.date, e, () => [el('h2', {}, `${DOWL[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`), e.date === today ? el('span', { class: 'tag' }, 'Tänään') : e.date === tmr ? el('span', { class: 'tag tmr' }, 'Huomenna') : null]); }
     }
+    let keys = [...groups.keys()];
+    if (S.sort === 'theme') keys.sort((a, b) => Object.keys(TYPES).indexOf(a) - Object.keys(TYPES).indexOf(b)); else if (S.sort === 'pub') keys.sort((a, b) => a.localeCompare(b, 'fi'));
+    for (const k of keys) { const g = groups.get(k);
+        box.append(el('section', { class: 'dayblock' }, el('div', { class: 'dh' }, g.head(), el('span', { class: 'cnt' }, g.evs.length + (g.evs.length === 1 ? ' tapahtuma' : ' tapahtumaa'))), el('div', { class: 'tiles' }, g.evs.map(tile)))); }
+}
+function renderMap(box, rows) {
+    const byPub = new Map(); for (const e of rows) { const k = e.pub + '|' + (e.city || ''); if (!byPub.has(k)) byPub.set(k, { pub: e.pub, city: e.city, address: e.address, lat: e.lat, lng: e.lng, website: e.website, evs: [] }); byPub.get(k).evs.push(e); }
+    const pubs = [...byPub.values()], located = pubs.filter(p => p.lat != null && p.lng != null), unlocated = pubs.filter(p => p.lat == null || p.lng == null);
+    if (!pubs.length) { box.append(el('div', { class: 'empty' }, el('div', { class: 'big' }, '🗺️'), el('h2', {}, 'Ei tapahtumia kartalla'), el('p', {}, 'Kokeile toista aikaväliä tai poista suodattimia.'))); return; }
+    const mapEl = el('div', { id: 'map', class: 'map' }), side = el('div', { class: 'card side' });
+    box.append(el('div', { class: 'mapwrap' }, mapEl, side));
+    if (typeof L === 'undefined') { mapEl.textContent = 'Karttaa ei voitu ladata.'; }
+    else {
+        S.map = L.map(mapEl, { scrollWheelZoom: false }); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(S.map);
+        const markers = located.map(p => {
+            const icon = L.divIcon({ className: '', html: `<div class="pin"><span>${p.evs.length}</span></div>`, iconSize: [36, 36], iconAnchor: [18, 36], popupAnchor: [0, -34] });
+            const pop = el('div', { class: 'pp' }, el('h4', {}, p.pub), el('div', { class: 'cnt' }, [p.address, p.city].filter(Boolean).join(', ')),
+                el('ul', {}, p.evs.slice(0, 6).map(e => el('li', {}, el('button', { type: 'button', onclick: () => openEvent(e) }, `${parse(e.date).getDate()}.${parse(e.date).getMonth() + 1}. ${hm(e.time_start)} ${e.title}`)))),
+                p.evs.length > 6 ? el('div', { class: 'cnt' }, `+${p.evs.length - 6} muuta`) : null, p.website && /^https?:\/\//i.test(p.website) ? el('a', { href: p.website, target: '_blank', rel: 'noopener' }, 'Baarin sivut') : null);
+            const m = L.marker([p.lat, p.lng], { icon }).addTo(S.map).bindPopup(pop); p.marker = m; return m;
+        });
+        if (markers.length) S.map.fitBounds(L.featureGroup(markers).getBounds().pad(0.25), { maxZoom: 14 }); else S.map.setView([64.5, 26], 5);
+    }
+    side.append(el('h3', {}, `${pubs.length} baaria, ${rows.length} tapahtumaa`));
+    for (const p of located) side.append(el('button', { class: 'bar-item', type: 'button', onclick: () => { if (S.map && p.marker) { S.map.setView([p.lat, p.lng], 15); p.marker.openPopup(); } } }, el('b', {}, p.pub), el('small', {}, [p.city, p.evs.length + ' tapahtumaa'].filter(Boolean).join(' · '))));
+    if (unlocated.length) { side.append(el('div', { class: 'lbl' }, 'Ei sijaintia kartalla')); for (const p of unlocated) side.append(el('div', { class: 'bar-item off' }, el('b', {}, p.pub), el('small', {}, [p.city, p.evs.length + ' tapahtumaa'].filter(Boolean).join(' · ')))); }
 }
 function renderMonth(box, rows) {
     if (!S.month) { const n = new Date(); S.month = new Date(n.getFullYear(), n.getMonth(), 1); }
@@ -78,9 +116,11 @@ function renderMonth(box, rows) {
     if (S.sel && by[S.sel]) { const d = parse(S.sel); box.append(el('div', { class: 'card daylist' }, el('h3', {}, `${DOWL[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`), el('div', { class: 'tiles' }, by[S.sel].map(tile)))); }
 }
 function refresh() {
-    document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String((t.id === 't-cal') === (S.view === 'cal'))));
-    renderToolbar(); const box = $('view'); box.replaceChildren(); const rows = filtered();
-    S.view === 'cal' ? renderMonth(box, rows) : renderList(box, rows); syncUrl();
+    document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.id === 't-' + S.view)));
+    if (S.map) { S.map.remove(); S.map = null; }
+    renderToolbar(); const box = $('view'); box.replaceChildren();
+    if (S.view === 'cal') renderMonth(box, filtered(false)); else if (S.view === 'map') renderMap(box, filtered()); else renderList(box, filtered());
+    syncUrl();
 }
 
 function openEvent(e) {
@@ -109,10 +149,10 @@ async function share() {
 (async () => {
     const p = new URLSearchParams(location.search);
     if (p.get('embed') === '1') { document.body.classList.add('embed'); $('hero').remove(); }
-    S.city = p.get('city') || ''; S.q = p.get('q') || ''; S.view = p.get('view') === 'cal' ? 'cal' : 'list';
+    S.city = p.get('city') || ''; S.q = p.get('q') || ''; S.view = ['cal', 'map'].includes(p.get('view')) ? p.get('view') : 'list'; S.range = RANGES.some(r => r[0] === p.get('range')) ? p.get('range') : 'all'; S.sort = SORTS.some(r => r[0] === p.get('sort')) ? p.get('sort') : 'day';
     for (const t of (p.get('type') || '').split(',')) if (TYPES[t]) S.types.add(t);
     $('q').value = S.q;
-    $('t-list').addEventListener('click', () => { S.view = 'list'; refresh(); }); $('t-cal').addEventListener('click', () => { S.view = 'cal'; refresh(); });
+    $('t-list').addEventListener('click', () => { S.view = 'list'; refresh(); }); $('t-cal').addEventListener('click', () => { S.view = 'cal'; refresh(); }); $('t-map').addEventListener('click', () => { S.view = 'map'; refresh(); });
     $('q').addEventListener('input', e => { S.q = e.target.value; refresh(); }); $('share').addEventListener('click', share);
     $('ov').addEventListener('click', e => { if (e.target.id === 'ov') closeEvent(); }); document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEvent(); });
     try {

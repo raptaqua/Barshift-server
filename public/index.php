@@ -36,12 +36,14 @@ if ($method === 'GET' && $path === '/api/events') {
     $to = isset($_GET['to']) ? dateStr($_GET['to'], 'to') : date('Y-m-d', strtotime('+' . (int)setting('calendar_days_ahead') . ' days'));
     $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
     $city = isset($_GET['city']) ? (string)$_GET['city'] : '';
-    $sql = "SELECT e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city
+    $sql = "SELECT e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city, p.address, p.lat, p.lng, p.website
             FROM events e JOIN pubs p ON p.id = e.pub_id WHERE p.status = 'active' AND e.date BETWEEN ? AND ?";
     $types = 'ss'; $args = [$from, $to];
     if ($city !== '') { $sql .= " AND p.city = ?"; $types .= 's'; $args[] = $city; }
     $sql .= " ORDER BY e.date, e.time_start LIMIT $limit";
-    out(['events' => rows(q($sql, $types, $args))]);
+    $evs = rows(q($sql, $types, $args));
+    foreach ($evs as &$e) { $e['lat'] = $e['lat'] === null ? null : (float)$e['lat']; $e['lng'] = $e['lng'] === null ? null : (float)$e['lng']; } unset($e);
+    out(['events' => $evs]);
 }
 
 // ---------- Liittäminen (liitoskoodilla; ei allekirjoitusta, koska avain rekisteröidään tässä) ----------
@@ -73,6 +75,17 @@ if (preg_match('#^/v1/events/([^/]+)$#', $path, $m) && in_array($method, ['PUT',
     q("INSERT INTO events (pub_id, external_id, title, description, date, time_start, time_end, type, price_text, url) VALUES (?,?,?,?,?,?,?,?,?,?)
        ON DUPLICATE KEY UPDATE title = VALUES(title), description = VALUES(description), date = VALUES(date), time_start = VALUES(time_start), time_end = VALUES(time_end), type = VALUES(type), price_text = VALUES(price_text), url = VALUES(url)",
         'isssssssss', [$pid, $ext, $title, $desc, $date, $ts, $te, $type, $price, $url]);
+    out(['success' => true]);
+}
+if ($method === 'PUT' && $path === '/v1/profile') {   // baarin julkinen sijainti ja osoite (kartta); vain julkisia tietoja
+    $pub = authPub(); $d = body();
+    $addr = str($d['address'] ?? null, 200, 'address'); $city = (string)str($d['city'] ?? null, 80, 'city'); $site = safeUrl($d['website'] ?? null);
+    $lat = $d['lat'] ?? null; $lng = $d['lng'] ?? null;
+    if ($lat !== null || $lng !== null) {
+        if (!is_numeric($lat) || !is_numeric($lng) || $lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) fail('Virheelliset koordinaatit');
+        $lat = round((float)$lat, 6); $lng = round((float)$lng, 6);
+    }
+    q("UPDATE pubs SET address = ?, city = IF(? = '', city, ?), lat = ?, lng = ?, website = ? WHERE id = ?", 'sssddsi', [$addr, $city, $city, $lat, $lng, $site, (int)$pub['id']]);
     out(['success' => true]);
 }
 if (preg_match('#^/v1/shifts/([^/]+)$#', $path, $m) && in_array($method, ['PUT', 'DELETE'], true)) {
@@ -181,11 +194,13 @@ if ($method === 'POST' && preg_match('#^/v1/applications/(\d+)/withdraw$#', $pat
 }
 
 $assets = ['/' => ['calendar.html', 'text/html'], '/index.html' => ['calendar.html', 'text/html'], '/calendar.js' => ['calendar.js', 'application/javascript'], '/admin.js' => ['admin.js', 'application/javascript'], '/hub.css' => ['hub.css', 'text/css'], '/calendar.css' => ['calendar.css', 'text/css']];
+$statics = ['/leaflet/leaflet.js' => ['leaflet/leaflet.js', 'application/javascript'], '/leaflet/leaflet.css' => ['leaflet/leaflet.css', 'text/css'], '/leaflet/images/marker-icon.png' => ['leaflet/images/marker-icon.png', 'image/png'], '/leaflet/images/marker-icon-2x.png' => ['leaflet/images/marker-icon-2x.png', 'image/png'], '/leaflet/images/marker-shadow.png' => ['leaflet/images/marker-shadow.png', 'image/png'], '/leaflet/images/layers.png' => ['leaflet/images/layers.png', 'image/png'], '/leaflet/images/layers-2x.png' => ['leaflet/images/layers-2x.png', 'image/png']];
+if ($method === 'GET' && isset($statics[$path])) { header('Content-Type: ' . $statics[$path][1]); header('Cache-Control: public, max-age=86400'); readfile(__DIR__ . '/' . $statics[$path][0]); exit; }
 if ($method === 'GET' && isset($assets[$path])) {
     header('Content-Type: ' . $assets[$path][1] . '; charset=utf-8'); header('Cache-Control: no-cache');
     // kalenterisivu saa olla upotettuna mihin tahansa sivuun (iframe); hallintasivu ei
     $embeddable = in_array($assets[$path][0], ['calendar.html', 'calendar.js', 'calendar.css'], true);
-    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'self'; form-action 'none'" . ($embeddable ? '; frame-ancestors *' : "; frame-ancestors 'none'"));
+    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; base-uri 'self'; form-action 'none'" . ($embeddable ? '; frame-ancestors *' : "; frame-ancestors 'none'"));
     readfile(__DIR__ . '/' . $assets[$path][0]); exit;
 }
 fail('Ei löydy', 404);

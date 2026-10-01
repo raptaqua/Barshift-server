@@ -82,3 +82,8 @@ ALTER TABLE `pubs` MODIFY `status` enum('active','suspended','pending') NOT NULL
 ALTER TABLE `pubs` MODIFY `public_key` varchar(64) NOT NULL DEFAULT '';
 ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `pair_hash` char(64) DEFAULT NULL;
 ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `pair_expires` datetime DEFAULT NULL;
+
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `address` varchar(200) DEFAULT NULL;
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `lat` decimal(9,6) DEFAULT NULL;
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `lng` decimal(9,6) DEFAULT NULL;
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `website` varchar(300) DEFAULT NULL;

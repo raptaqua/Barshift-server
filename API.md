@@ -39,6 +39,7 @@ Kaikki vaativat allekirjoituksen. Vastaukset ovat JSON.
 |---|---|
 | `PUT /v1/events/{external_id}` | Luo/päivitä julkinen tapahtuma. Runko: `{title, date, time_start?, time_end?, description?, type?, price_text?, url?}` |
 | `DELETE /v1/events/{external_id}` | Poista tapahtuma |
+| `PUT /v1/profile` | Baarin julkinen osoite ja sijainti kartalle. Runko: `{address?, city?, lat?, lng?, website?}` (lat ja lng yhdessä) |
 | `PUT /v1/shifts/{external_id}` | Luo/päivitä avoin keikkavuoro. Runko: `{date, time_start, time_end, role?, pay_text?, note?, status?}` (`status`: `open`/`filled`/`cancelled`) |
 | `DELETE /v1/shifts/{external_id}` | Poista vuoro (hakemukset poistuvat) |
 | `GET /v1/applications?since_id=N` | Hakemukset baarin vuoroihin (id > N). Yhteystiedot vain hyväksytyillä |

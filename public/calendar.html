@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="fi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><meta name="theme-color" content="#FF7A59">
-<title>Tapahtumakalenteri</title><link rel="stylesheet" href="calendar.css"></head>
+<title>Tapahtumakalenteri</title><link rel="stylesheet" href="leaflet/leaflet.css"><link rel="stylesheet" href="calendar.css"></head>
 <body>
 <header class="hero" id="hero"><div class="in"><h1 id="title">Tapahtumat</h1><p>Baarien tapahtumat samassa paikassa: livemusiikkia, visoja, urheilua ja bileitä.</p></div></header>
 <main class="wrap">
  <div class="controls"><div class="bar">
-  <div class="tabs" role="tablist"><button class="tab" role="tab" id="t-list" aria-selected="true">Lista</button><button class="tab" role="tab" id="t-cal" aria-selected="false">Kuukausi</button></div>
+  <div class="tabs" role="tablist"><button class="tab" role="tab" id="t-list" aria-selected="true">Lista</button><button class="tab" role="tab" id="t-cal" aria-selected="false">Kuukausi</button><button class="tab" role="tab" id="t-map" aria-selected="false">Kartta</button></div>
   <input class="search" id="q" type="search" placeholder="Hae tapahtumaa tai baaria" aria-label="Haku">
   <button class="btn sm" id="share" type="button">🔗 Jaa</button>
  </div></div>
@@ -15,4 +15,4 @@
  <p class="foot" id="footer"></p>
 </main>
 <div class="ov" id="ov" role="dialog" aria-modal="true"><div class="modal" id="modal"></div></div>
-<script src="calendar.js"></script></body></html>
+<script src="leaflet/leaflet.js"></script><script src="calendar.js"></script></body></html>

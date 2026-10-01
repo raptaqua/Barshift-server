@@ -60,9 +60,9 @@ const views = {
         const listBox = h('div', {}); b.append(listBox);
         async function loadList() {
             const pubs = (await api('GET', '/pubs')).pubs;
-            listBox.replaceChildren(table([['Baari', r => r.name + ' (' + r.slug + ')'], ['Kaupunki', r => r.city], ['Tila', r => r.status === 'pending' ? 'Odottaa liittämistä' : (r.status === 'active' ? 'Aktiivinen' : 'Estetty')], ['Viimeksi yhteydessä', r => r.last_seen_at || 'ei vielä'], ['Tapahtumia', r => r.events], ['Avoimia vuoroja', r => r.open_shifts]], pubs, r => h('div', { class: 'row' },
+            listBox.replaceChildren(table([['Baari', r => r.name + ' (' + r.slug + ')'], ['Kaupunki', r => r.city], ['Sijainti', r => r.lat != null ? '📍 kartalla' : '–'], ['Tila', r => r.status === 'pending' ? 'Odottaa liittämistä' : (r.status === 'active' ? 'Aktiivinen' : 'Estetty')], ['Viimeksi yhteydessä', r => r.last_seen_at || 'ei vielä'], ['Tapahtumia', r => r.events], ['Avoimia vuoroja', r => r.open_shifts]], pubs, r => h('div', { class: 'row' },
                 r.status !== 'pending' ? h('button', { class: 'ghost', onclick: async () => { await api('PUT', '/pubs/' + r.id, { name: r.name, city: r.city, status: r.status === 'active' ? 'suspended' : 'active' }); loadList(); } }, r.status === 'active' ? 'Estä' : 'Aktivoi') : null,
-                h('button', { class: 'ghost', onclick: async () => { const n = prompt('Baarin nimi', r.name); if (n === null) return; const c = prompt('Kaupunki', r.city); if (c === null) return; await api('PUT', '/pubs/' + r.id, { name: n, city: c, status: r.status === 'pending' ? 'suspended' : r.status }); loadList(); } }, 'Muokkaa'),
+                h('button', { class: 'ghost', onclick: () => editPub(out, r, loadList) }, 'Muokkaa'),
                 h('button', { class: 'ghost', onclick: async () => showCode(out, await api('POST', '/pubs/' + r.id + '/pairing_code')) }, r.paired ? 'Uusi liitoskoodi' : 'Näytä liitoskoodi'),
                 h('button', { class: 'danger', onclick: async () => { if (confirm('Poistetaanko baari ja kaikki sen tapahtumat ja vuorot?')) { await api('DELETE', '/pubs/' + r.id); loadList(); } } }, 'Poista'))));
         }
@@ -93,6 +93,17 @@ const views = {
         b.append(h('div', { class: 'card' }, h('h2', {}, 'Vaihda salasana'), h('div', { class: 'row' }, cur, nw, h('button', { onclick: async () => { try { await api('POST', '/password', { current: cur.value, new: nw.value }); cur.value = nw.value = ''; msg(pst, 'Salasana vaihdettu', true); } catch (e) { msg(pst, e.message); } } }, 'Vaihda')), pst));
     },
 };
+function editPub(box, r, done) {
+    const f = { name: h('input', { value: r.name, maxlength: 120 }), city: h('input', { value: r.city || '' }), address: h('input', { value: r.address || '', placeholder: 'Katuosoite' }), website: h('input', { value: r.website || '', placeholder: 'https://…' }),
+        lat: h('input', { value: r.lat ?? '', placeholder: 'esim. 60.1699', size: 10 }), lng: h('input', { value: r.lng ?? '', placeholder: 'esim. 24.9384', size: 10 }) }, st = h('div', {});
+    const field = (label, input) => h('p', {}, h('label', {}, label, h('br'), input));
+    box.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Muokkaa baaria: ' + r.slug),
+        h('p', { class: 'muted' }, 'Osoite ja koordinaatit näkyvät kalenterin kartalla. Baarin sovellus lähettää ne yleensä itse, kun baarin julkinen profiili on julkaistu, mutta voit korjata ne tästä.'),
+        field('Nimi', f.name), field('Kaupunki', f.city), field('Osoite', f.address), field('Verkkosivu', f.website), h('div', { class: 'row' }, field('Leveyspiiri (lat)', f.lat), field('Pituuspiiri (lng)', f.lng)),
+        h('div', { class: 'row' }, h('button', { onclick: async () => { try { await api('PUT', '/pubs/' + r.id, { name: f.name.value, city: f.city.value, status: r.status, address: f.address.value, website: f.website.value, lat: f.lat.value, lng: f.lng.value }); box.replaceChildren(); done(); } catch (e) { msg(st, e.message); } } }, 'Tallenna'),
+            h('button', { class: 'ghost', onclick: () => box.replaceChildren() }, 'Peruuta')), st));
+    box.scrollIntoView({ behavior: 'smooth' });
+}
 function showCode(box, r) {
     box.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Liitoskoodi baarille ' + r.slug), h('p', { class: 'muted' }, 'Anna baarin ylläpitäjälle nämä kaksi tietoa. Koodi on kertakäyttöinen ja voimassa 7 päivää. Baarin sovelluksessa: Baari → Asetukset → Keskuspalvelin → Yhdistä.'),
         h('p', {}, 'Keskuksen osoite:'), h('pre', {}, r.url), h('p', {}, 'Liitoskoodi:'), h('pre', {}, r.code)));

@@ -48,8 +48,17 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await signed(B, 'baari-b', 'PUT', '/v1/events/b1', { title: 'Visa', date: day(6), time_start: '19:00', price_text: '5 €', url: 'https://b.example/visa' })).status, 200);
         const all = (await plain('GET', '/api/events')).json.events; assert.ok(all.length >= 2);
         const ev = all.find(e => e.title === 'Visa'); assert.strictEqual(ev.pub, 'Baari B'); assert.strictEqual(ev.city, 'Helsinki');
-        assert.deepStrictEqual(Object.keys(ev).sort(), ['city', 'date', 'description', 'price_text', 'pub', 'time_end', 'time_start', 'title', 'type', 'url']);
+        assert.deepStrictEqual(Object.keys(ev).sort(), ['address', 'city', 'date', 'description', 'lat', 'lng', 'price_text', 'pub', 'time_end', 'time_start', 'title', 'type', 'url', 'website']);
         const tku = (await plain('GET', '/api/events?city=Turku')).json.events; assert.ok(tku.length && tku.every(e => e.city === 'Turku'));
+    });
+    await t('baarin profiili (osoite, koordinaatit) näkyy tapahtumien mukana kartalle; virheelliset hylätään', async () => {
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/profile', { address: 'Testikatu 1', city: 'Turku', lat: 91, lng: 22 })).status, 400);
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/profile', { address: 'Testikatu 1', lat: 60.1 })).status, 400, 'pelkkä lat hyväksyttiin');
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/profile', { website: 'javascript:alert(1)' })).status, 400);
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/profile', { address: 'Testikatu 1', city: 'Turku', lat: 60.4518, lng: 22.2666, website: 'https://a.example' })).status, 200);
+        const ev = (await plain('GET', '/api/events')).json.events.find(e => e.pub === 'Baari A'); assert.strictEqual(ev.lat, 60.4518); assert.strictEqual(ev.lng, 22.2666); assert.strictEqual(ev.address, 'Testikatu 1'); assert.strictEqual(ev.website, 'https://a.example');
+        const other = (await plain('GET', '/api/events')).json.events.find(e => e.pub === 'Baari B'); assert.strictEqual(other.lat, null, 'toisen baarin sijainti muuttui');
+        for (const f of ['/leaflet/leaflet.js', '/leaflet/leaflet.css', '/leaflet/images/marker-icon.png']) assert.strictEqual((await fetch(BASE + f)).status, 200, f);
     });
     await t('tapahtuma päivittyy ja poistuu; toinen baari ei voi poistaa', async () => {
         assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/events/e1', { title: 'Päivitetty', date: day(5) })).status, 200);
@@ -142,6 +151,10 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await call('POST', '/pubs', { slug: 'uusi-baari', name: 'X' })).status, 409);
         assert.strictEqual((await call('POST', '/pubs', { slug: 'Väärä Tunnus', name: 'X' })).status, 400);
         const list = (await call('GET', '/pubs')).json.pubs; const nb = list.find(p => p.slug === 'uusi-baari'); assert.ok(nb.last_seen_at); assert.strictEqual(nb.status, 'active'); assert.ok(nb.paired);
+        assert.strictEqual((await call('PUT', `/pubs/${nb.id}`, { name: 'Uusi Baari', city: 'Oulu', status: 'active', address: 'Kauppatori 1', lat: 65.0121, lng: 25.4651, website: 'https://uusi.example' })).status, 200);
+        assert.strictEqual((await call('PUT', `/pubs/${nb.id}`, { name: 'Uusi Baari', city: 'Oulu', status: 'active', address: 'X', lat: 'abc', lng: 1 })).status, 400);
+        assert.strictEqual((await call('PUT', `/pubs/${nb.id}`, { name: 'Uusi Baari', city: 'Oulu', status: 'pending' })).status, 400, 'liitetty baari palautui odottamaan');
+        assert.strictEqual((await call('GET', '/pubs')).json.pubs.find(p => p.id === nb.id).lat, '65.012100');
         // uusi liitoskoodi vaihtaa avaimen: vanha toimii kunnes uusi liitetään, sen jälkeen ei
         const rot = await call('POST', `/pubs/${nb.id}/pairing_code`); assert.strictEqual(rot.status, 200);
         assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Vielä vanha', date: day(8) })).status, 200);
