@@ -112,6 +112,36 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await plain('GET', '/v1/me', undefined, w1)).status, 401, 'istunto toimii tilin poiston jälkeen');
         const apps = (await signed(A, 'baari-a', 'GET', '/v1/applications?since_id=0')).json.applications; assert.ok(!apps.some(a => a.name === 'Aino Keikka'), 'poistetun käyttäjän tiedot jäivät');
     });
+    await t('baarien välinen keikkapörssi: feed, hakeminen oman baarin kautta, päätös ja tilanne takaisin', async () => {
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/shifts/s9', { date: day(7), time_start: '18:00', time_end: '02:00', role: 'Baarimestari', pay_text: '17 €/h', note: 'Perjantai' })).status, 200);
+        assert.strictEqual((await plain('GET', '/v1/feed')).status, 401, 'feed ilman allekirjoitusta');
+        const fb = (await signed(B, 'baari-b', 'GET', '/v1/feed')).json.shifts; const sh = fb.find(x => x.role === 'Baarimestari' && x.pub === 'Baari A'); assert.ok(sh, 'toisen baarin vuoro puuttuu feedistä');
+        assert.deepStrictEqual(Object.keys(sh).sort(), ['city', 'date', 'id', 'note', 'pay_text', 'pub', 'role', 'time_end', 'time_start', 'updated_at']);
+        assert.ok(!(await signed(A, 'baari-a', 'GET', '/v1/feed')).json.shifts.some(x => x.id === sh.id), 'oma vuoro näkyy omassa feedissä');
+        assert.strictEqual((await signed(A, 'baari-a', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u1', name: 'Oma Hakija', phone: '040' })).status, 404, 'oman vuoron haku onnistui');
+        assert.strictEqual((await signed(B, 'baari-b', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u1', name: 'Bea Baarilainen' })).status, 400, 'ilman yhteystietoa hyväksyttiin');
+        assert.strictEqual((await signed(B, 'baari-b', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u 1', name: 'Bea Baarilainen', phone: '040' })).status, 400, 'virheellinen ref');
+        const ap = await signed(B, 'baari-b', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u1', name: 'Bea Baarilainen', phone: '0407654321', email: 'bea@b.test', skills: 'baarimestari', message: 'Pääsen' });
+        assert.strictEqual(ap.status, 201); assert.strictEqual(ap.json.status, 'pending');
+        assert.strictEqual((await signed(B, 'baari-b', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u1', name: 'Bea Baarilainen', phone: '0407654321' })).json.id, ap.json.id, 'tuplahakemus loi uuden rivin');
+        const recv = (await signed(A, 'baari-a', 'GET', '/v1/applications?since_id=0')).json.applications.find(a => a.name === 'Bea Baarilainen');
+        assert.ok(recv); assert.strictEqual(recv.from_pub, 'Baari B'); assert.strictEqual(recv.shift, 's9'); assert.strictEqual(recv.email, null, 'yhteystiedot näkyivät ennen hyväksyntää'); assert.strictEqual(recv.phone, null);
+        const out1 = (await signed(B, 'baari-b', 'GET', '/v1/outgoing_applications')).json.applications; assert.strictEqual(out1.length, 1); assert.strictEqual(out1[0].ref, 'u1'); assert.strictEqual(out1[0].status, 'pending'); assert.strictEqual(out1[0].address, null);
+        assert.strictEqual((await signed(A, 'baari-a', 'GET', '/v1/outgoing_applications')).json.applications.length, 0, 'toisen baarin hakemukset vuotivat');
+        assert.strictEqual((await signed(A, 'baari-a', 'POST', `/v1/outgoing_applications/${ap.json.id}/withdraw`)).json.changed, false, 'toinen baari perui hakemuksen');
+        assert.strictEqual((await signed(A, 'baari-a', 'POST', `/v1/applications/${recv.id}/decision`, { decision: 'accepted' })).status, 200);
+        const acc = (await signed(A, 'baari-a', 'GET', '/v1/applications?since_id=0')).json.applications.find(a => a.id === recv.id); assert.strictEqual(acc.phone, '0407654321'); assert.strictEqual(acc.email, 'bea@b.test');
+        const out2 = (await signed(B, 'baari-b', 'GET', '/v1/outgoing_applications')).json.applications[0]; assert.strictEqual(out2.status, 'accepted'); assert.strictEqual(out2.pub, 'Baari A');
+        assert.ok(!(await signed(B, 'baari-b', 'GET', '/v1/feed')).json.shifts.some(x => x.id === sh.id), 'täytetty vuoro näkyy feedissä');
+        assert.strictEqual((await signed(B, 'baari-b', 'POST', `/v1/feed/${sh.id}/apply`, { ref: 'u2', name: 'Cee', phone: '1' })).status, 404, 'täytettyyn vuoroon voi hakea');
+        // peruminen
+        assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/shifts/s10', { date: day(8), time_start: '18:00', time_end: '23:00', role: 'Tarjoilija' })).status, 200);
+        const sh2 = (await signed(B, 'baari-b', 'GET', '/v1/feed')).json.shifts.find(x => x.role === 'Tarjoilija' && x.pub === 'Baari A');
+        const ap2 = await signed(B, 'baari-b', 'POST', `/v1/feed/${sh2.id}/apply`, { ref: 'u3', name: 'Dan Perui', phone: '1234' }); assert.strictEqual(ap2.status, 201);
+        assert.strictEqual((await signed(B, 'baari-b', 'POST', `/v1/outgoing_applications/${ap2.json.id}/withdraw`)).json.changed, true);
+        assert.ok(!(await signed(B, 'baari-b', 'GET', '/v1/outgoing_applications')).json.applications.some(a => a.ref === 'u3'));
+        assert.ok(!(await signed(A, 'baari-a', 'GET', '/v1/applications?since_id=0')).json.applications.some(a => a.name === 'Dan Perui'), 'peruttu hakemus näkyy vastaanottajalle');
+    });
     await t('alihakemistoasennus (base_path): allekirjoitus lasketaan polulle ilman asennuspolkua', async () => {
         const raw = JSON.stringify({ title: 'Alihakemisto', date: day(9) }), ts = String(Math.floor(Date.now() / 1000)), nonce = crypto.randomBytes(12).toString('hex');
         const msg = `PUT\n/v1/events/sub1\n${ts}\n${nonce}\n${crypto.createHash('sha256').update(raw).digest('hex')}`;

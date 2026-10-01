@@ -64,4 +64,16 @@ Kaikki vaativat allekirjoituksen. Vastaukset ovat JSON.
 | `GET /v1/my_applications` | Omat hakemukset |
 | `POST /v1/applications/{id}/withdraw` | Peru hakemus |
 
+## Baarien välinen keikkapörssi (allekirjoitettu baaripyyntö)
+Baarin työntekijät hakevat toisten baarien avoimia vuoroja omassa BarShift-asennuksessaan. Keskus vain välittää: vuorot ovat julkista tietoa, ja hakijan tiedot kulkevat ainoastaan vuoron tarjonneelle baarille.
+
+| Pyyntö | Kuvaus |
+|---|---|
+| `GET /v1/feed?city=` | Muiden baarien avoimet vuorot (`id, date, time_start, time_end, role, pay_text, note, updated_at, pub, city`). Oman baarin vuoroja ei palauteta |
+| `POST /v1/feed/{shift_id}/apply` | Hae vuoroa: `{ref, name, phone?, email?, skills?, message?}` (vähintään `phone` tai `email`). `ref` on hakijan pysyvä tunniste hakevan baarin päässä (`[A-Za-z0-9_-]{1,64}`); sama `ref` + vuoro = yksi hakemus. Vastaus `{id, status}` |
+| `GET /v1/outgoing_applications` | Oman baarin lähettämät hakemukset ja niiden tila (`pending/accepted/declined`, vuoron tiedot, hyväksytyssä myös tarjoavan baarin osoite) |
+| `POST /v1/outgoing_applications/{id}/withdraw` | Peru odottava hakemus |
+
+Vuoron tarjonnut baari näkee hakemukset samassa `GET /v1/applications`-listassa (`from_pub` = hakijan baari); yhteystiedot paljastuvat vasta hyväksynnän jälkeen.
+
 Virheet: `{ "error": "teksti" }` ja HTTP-statuskoodi.

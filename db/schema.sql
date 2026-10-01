@@ -87,3 +87,15 @@ ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `address` varchar(200) DEFAULT NULL;
 ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `lat` decimal(9,6) DEFAULT NULL;
 ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `lng` decimal(9,6) DEFAULT NULL;
 ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `website` varchar(300) DEFAULT NULL;
+
+-- Baarien väliset keikkahakemukset: toisen baarin työntekijä hakee vuoroa oman baarinsa kautta.
+-- Hakijan tiedot kulkevat vain tämän hakemuksen vastaanottavalle baarille, keskus ei pidä niitä muuhun käyttöön.
+ALTER TABLE `applications` MODIFY `worker_id` int DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `from_pub_id` int DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_ref` varchar(64) DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_name` varchar(120) DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_phone` varchar(40) DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_email` varchar(190) DEFAULT NULL;
+ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_skills` varchar(300) DEFAULT NULL;
+ALTER TABLE `applications` ADD UNIQUE KEY IF NOT EXISTS `uq_pub_app` (`shift_id`,`from_pub_id`,`applicant_ref`);
+ALTER TABLE `applications` ADD FOREIGN KEY IF NOT EXISTS `fk_ap_pub` (`from_pub_id`) REFERENCES `pubs` (`id`) ON DELETE CASCADE;

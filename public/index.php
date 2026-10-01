@@ -105,9 +105,10 @@ if (preg_match('#^/v1/shifts/([^/]+)$#', $path, $m) && in_array($method, ['PUT',
 }
 if ($method === 'GET' && $path === '/v1/applications') {
     $pub = authPub(); $since = max(0, (int)($_GET['since_id'] ?? 0));
-    $rs = rows(q("SELECT a.id, s.external_id AS shift, a.status, a.message, a.created_at, w.name, w.skills, w.city,
-                         IF(a.status = 'accepted', w.email, NULL) AS email, IF(a.status = 'accepted', w.phone, NULL) AS phone
-                  FROM applications a JOIN shifts s ON s.id = a.shift_id JOIN workers w ON w.id = a.worker_id
+    $rs = rows(q("SELECT a.id, s.external_id AS shift, a.status, a.message, a.created_at,
+                         COALESCE(a.applicant_name, w.name) AS name, COALESCE(a.applicant_skills, w.skills) AS skills, COALESCE(w.city, ap.city) AS city, ap.name AS from_pub,
+                         IF(a.status = 'accepted', COALESCE(a.applicant_email, w.email), NULL) AS email, IF(a.status = 'accepted', COALESCE(a.applicant_phone, w.phone), NULL) AS phone
+                  FROM applications a JOIN shifts s ON s.id = a.shift_id LEFT JOIN workers w ON w.id = a.worker_id LEFT JOIN pubs ap ON ap.id = a.from_pub_id
                   WHERE s.pub_id = ? AND a.id > ? AND a.status <> 'withdrawn' ORDER BY a.id LIMIT 200", 'ii', [(int)$pub['id'], $since]));
     out(['applications' => $rs]);
 }
@@ -123,6 +124,46 @@ if ($method === 'POST' && preg_match('#^/v1/applications/(\d+)/decision$#', $pat
         q("UPDATE applications SET status = 'declined', decided_at = NOW() WHERE shift_id = ? AND status = 'pending'", 'i', [(int)$a['shift_id']]);
     }
     out(['success' => true]);
+}
+
+// ---------- Baarien välinen keikkapörssi (baari hakee vuoroja omille työntekijöilleen) ----------
+// Keskus välittää vain: toisten baarien avoimet vuorot (julkista tietoa) ja hakemukset. Hakijan tiedot menevät ainoastaan vuoron tarjonneelle baarille.
+if ($method === 'GET' && $path === '/v1/feed') {
+    $pub = authPub(); rateLimit('feed:' . $pub['id'], 600, 3600);
+    $sql = "SELECT s.id, s.date, s.time_start, s.time_end, s.role, s.pay_text, s.note, s.updated_at, p.name AS pub, p.city FROM shifts s JOIN pubs p ON p.id = s.pub_id
+            WHERE p.status = 'active' AND p.id <> ? AND s.status = 'open' AND s.date >= CURDATE()"; $types = 'i'; $args = [(int)$pub['id']];
+    if (!empty($_GET['city'])) { $sql .= " AND p.city = ?"; $types .= 's'; $args[] = (string)$_GET['city']; }
+    out(['shifts' => rows(q($sql . " ORDER BY s.date, s.time_start LIMIT 300", $types, $args))]);
+}
+if ($method === 'POST' && preg_match('#^/v1/feed/(\d+)/apply$#', $path, $m)) {
+    $pub = authPub(); $d = body(); rateLimit('feedapply:' . $pub['id'], 60, 3600);
+    $s = one(q("SELECT s.id FROM shifts s JOIN pubs p ON p.id = s.pub_id WHERE s.id = ? AND s.pub_id <> ? AND s.status = 'open' AND s.date >= CURDATE() AND p.status = 'active'", 'ii', [(int)$m[1], (int)$pub['id']]));
+    if (!$s) fail('Vuoro ei ole haettavissa', 404);
+    $ref = (string)($d['ref'] ?? ''); if (!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $ref)) fail('Virheellinen hakijan tunniste');
+    $name = str($d['name'] ?? null, 120, 'name', true); if (mb_strlen($name) < 2) fail('Nimi on liian lyhyt');
+    $phone = str($d['phone'] ?? null, 40, 'phone'); $email = str($d['email'] ?? null, 190, 'email'); $skills = str($d['skills'] ?? null, 300, 'skills'); $msg = str($d['message'] ?? null, 500, 'message');
+    if ($email !== null && !filter_var($email, FILTER_VALIDATE_EMAIL)) fail('Virheellinen sähköposti');
+    if ($phone === null && $email === null) fail('Anna puhelinnumero tai sähköposti, jotta baari voi ottaa yhteyttä');
+    q("INSERT INTO applications (shift_id, worker_id, from_pub_id, applicant_ref, applicant_name, applicant_phone, applicant_email, applicant_skills, message) VALUES (?,NULL,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE message = IF(status = 'withdrawn', VALUES(message), message), applicant_name = IF(status = 'withdrawn', VALUES(applicant_name), applicant_name),
+         applicant_phone = IF(status = 'withdrawn', VALUES(applicant_phone), applicant_phone), applicant_email = IF(status = 'withdrawn', VALUES(applicant_email), applicant_email),
+         applicant_skills = IF(status = 'withdrawn', VALUES(applicant_skills), applicant_skills), status = IF(status = 'withdrawn', 'pending', status)",
+        'iissssss', [(int)$s['id'], (int)$pub['id'], $ref, $name, $phone, $email, $skills, $msg]);
+    $a = one(q("SELECT id, status FROM applications WHERE shift_id = ? AND from_pub_id = ? AND applicant_ref = ?", 'iis', [(int)$s['id'], (int)$pub['id'], $ref]));
+    out(['success' => true, 'id' => (int)$a['id'], 'status' => $a['status']], 201);
+}
+if ($method === 'GET' && $path === '/v1/outgoing_applications') {
+    $pub = authPub();
+    $rs = rows(q("SELECT a.id, a.applicant_ref AS ref, a.status, a.created_at, a.decided_at, s.id AS shift_id, s.date, s.time_start, s.time_end, s.role, s.status AS shift_status, p.name AS pub, p.city, p.website,
+                         IF(a.status = 'accepted', p.address, NULL) AS address
+                  FROM applications a JOIN shifts s ON s.id = a.shift_id JOIN pubs p ON p.id = s.pub_id
+                  WHERE a.from_pub_id = ? AND a.status <> 'withdrawn' ORDER BY a.id DESC LIMIT 200", 'i', [(int)$pub['id']]));
+    out(['applications' => $rs]);
+}
+if ($method === 'POST' && preg_match('#^/v1/outgoing_applications/(\d+)/withdraw$#', $path, $m)) {
+    $pub = authPub();
+    $st = q("UPDATE applications SET status = 'withdrawn' WHERE id = ? AND from_pub_id = ? AND status = 'pending'", 'ii', [(int)$m[1], (int)$pub['id']]);
+    out(['success' => true, 'changed' => $st->affected_rows > 0]);
 }
 
 // ---------- Keikkatyöntekijä ----------
