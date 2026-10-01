@@ -43,11 +43,11 @@ const views = {
         const calUrl = location.origin + BASE + '/';
         const copy = (text, btn) => async () => { try { await navigator.clipboard.writeText(text); btn.textContent = 'Kopioitu ✓'; } catch (e) { prompt('Kopioi osoite', text); } };
         const b1 = h('button', { class: 'ghost' }, 'Kopioi osoite'); b1.addEventListener('click', copy(calUrl, b1));
-        const embed = '<iframe src="' + calUrl + '" style="width:100%;height:700px;border:0" title="Tapahtumakalenteri"></iframe>';
+        const embed = '<iframe src="' + calUrl + '?embed=1" style="width:100%;height:700px;border:0" title="Tapahtumakalenteri"></iframe>';
         const b2 = h('button', { class: 'ghost' }, 'Kopioi upotuskoodi'); b2.addEventListener('click', copy(embed, b2));
-        b.append(h('div', { class: 'card' }, h('h2', {}, 'Julkinen tapahtumakalenteri'), h('p', { class: 'muted' }, 'Tämä on sivu, jota kävijät käyttävät: kaikkien liitettyjen baarien julkiset tapahtumat yhdessä paikassa, suodatus kaupungin mukaan.'),
+        b.append(h('div', { class: 'card calcard' }, h('h2', {}, 'Julkinen tapahtumakalenteri – jaa tämä'), h('p', { class: 'muted' }, 'Tämä on sivu, jota kävijät käyttävät: kaikkien liitettyjen baarien julkiset tapahtumat yhdessä paikassa. Jaa osoite missä tahansa tai upota kalenteri omalle sivullesi. Osoitteeseen voi lisätä valmiin suodatuksen, esim. ?city=Turku tai ?type=music, ja ?embed=1 piilottaa otsikon upotuksessa.'),
             h('div', { class: 'row' }, h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, calUrl), h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, h('button', {}, 'Avaa kalenteri')), b1, b2),
-            h('p', { class: 'muted' }, 'Tapahtumat myös koneluettavana (JSON): ', h('a', { href: BASE + '/public/events', target: '_blank', rel: 'noopener' }, calUrl + 'public/events'))));
+            h('p', { class: 'muted' }, 'Tapahtumat myös koneluettavana (JSON): ', h('a', { href: BASE + '/api/events', target: '_blank', rel: 'noopener' }, calUrl + 'api/events'))));
         b.append(h('div', { class: 'grid' }, st('pubs_active', 'Aktiivista baaria'), st('events', 'Tulevaa tapahtumaa'), st('open_shifts', 'Avointa keikkavuoroa'), st('workers', 'Keikkatyöläistä'), st('pending_applications', 'Käsittelemätöntä hakemusta')));
     },
     async pubs(b) {

@@ -49,7 +49,8 @@ Kaikki vaativat allekirjoituksen. Vastaukset ovat JSON.
 ## Julkinen rajapinta
 | Pyyntö | Kuvaus |
 |---|---|
-| `GET /public/events?city=&from=&to=&limit=` | Julkiset tapahtumat (ei kirjautumista) |
+| `GET /api/events?city=&from=&to=&limit=` | Julkiset tapahtumat (ei kirjautumista, CORS auki). Vanha `/public/events` toimii edelleen |
+| `GET /api/config` | Sivuston nimi, alatunniste, kaupungit |
 
 ## Keikkatyöntekijän rajapinta (istuntotunniste `Authorization: Bearer <token>`)
 | Pyyntö | Kuvaus |

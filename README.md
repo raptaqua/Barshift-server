@@ -15,6 +15,9 @@ php bin/add_pub.php --suspend baari-a # estä baari
 ```
 Web-juuri on `public/` (kaikki pyynnöt `public/index.php`:lle). Cron päivittäin: `php bin/cleanup.php`.
 
+## Julkinen kalenteri (jaettava)
+Kalenteri on hubin juuriosoitteessa (`https://sivu.fi/hub/`): lista- ja kuukausinäkymä, haku, kaupunki- ja tyyppisuodatus, tapahtuman tiedot ja "Lisää kalenteriin" (.ics). Osoitteeseen voi lisätä valmiin näkymän: `?city=Turku`, `?type=music,quiz`, `?q=haku`, `?view=cal`. Upotus: `<iframe src="https://sivu.fi/hub/?embed=1" style="width:100%;height:700px;border:0"></iframe>` (`embed=1` piilottaa otsikon). Koneluettava syöte: `/api/events`.
+
 ## Hallintasivu
 Luo hallintatunnus: `php bin/admin.php create <tunnus>` ja kirjaudu osoitteessa `/admin`. Sivulta: baarien lisäys (palvelin luo kertakäyttöisen liitoskoodin; baari liittää itsensä koodilla client-sovelluksen hallinnasta, ja baarin yksityinen avain pysyy aina clientissa), esto/aktivointi, uusi liitoskoodi (avaimen vaihto), tapahtumien ja keikkavuorojen poisto, keikkatyöläisten hallinta ja asetukset (sivuston nimi, kalenterin pituus, kalenteri ja rekisteröinti päälle/pois).
 

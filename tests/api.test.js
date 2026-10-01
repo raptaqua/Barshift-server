@@ -46,18 +46,18 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
     });
     await t('julkinen kalenteri: tapahtumat näkyvät, vain julkiset kentät, kaupunkisuodatus', async () => {
         assert.strictEqual((await signed(B, 'baari-b', 'PUT', '/v1/events/b1', { title: 'Visa', date: day(6), time_start: '19:00', price_text: '5 €', url: 'https://b.example/visa' })).status, 200);
-        const all = (await plain('GET', '/public/events')).json.events; assert.ok(all.length >= 2);
+        const all = (await plain('GET', '/api/events')).json.events; assert.ok(all.length >= 2);
         const ev = all.find(e => e.title === 'Visa'); assert.strictEqual(ev.pub, 'Baari B'); assert.strictEqual(ev.city, 'Helsinki');
         assert.deepStrictEqual(Object.keys(ev).sort(), ['city', 'date', 'description', 'price_text', 'pub', 'time_end', 'time_start', 'title', 'type', 'url']);
-        const tku = (await plain('GET', '/public/events?city=Turku')).json.events; assert.ok(tku.length && tku.every(e => e.city === 'Turku'));
+        const tku = (await plain('GET', '/api/events?city=Turku')).json.events; assert.ok(tku.length && tku.every(e => e.city === 'Turku'));
     });
     await t('tapahtuma päivittyy ja poistuu; toinen baari ei voi poistaa', async () => {
         assert.strictEqual((await signed(A, 'baari-a', 'PUT', '/v1/events/e1', { title: 'Päivitetty', date: day(5) })).status, 200);
-        assert.ok((await plain('GET', '/public/events')).json.events.some(e => e.title === 'Päivitetty'));
+        assert.ok((await plain('GET', '/api/events')).json.events.some(e => e.title === 'Päivitetty'));
         await signed(B, 'baari-b', 'DELETE', '/v1/events/e1');   // B:n e1 ei ole olemassa -> ei vaikutusta A:han
-        assert.ok((await plain('GET', '/public/events')).json.events.some(e => e.title === 'Päivitetty'));
+        assert.ok((await plain('GET', '/api/events')).json.events.some(e => e.title === 'Päivitetty'));
         assert.strictEqual((await signed(A, 'baari-a', 'DELETE', '/v1/events/e1')).status, 200);
-        assert.ok(!(await plain('GET', '/public/events')).json.events.some(e => e.title === 'Päivitetty'));
+        assert.ok(!(await plain('GET', '/api/events')).json.events.some(e => e.title === 'Päivitetty'));
     });
 
     let w1, w2, shiftId;
@@ -108,8 +108,12 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         const msg = `PUT\n/v1/events/sub1\n${ts}\n${nonce}\n${crypto.createHash('sha256').update(raw).digest('hex')}`;
         const r = await fetch(SUB + '/hub/v1/events/sub1', { method: 'PUT', body: raw, headers: { 'X-Pub': 'baari-a', 'X-Timestamp': ts, 'X-Nonce': nonce, 'X-Signature': crypto.sign(null, Buffer.from(msg), A.priv).toString('base64') } });
         assert.strictEqual(r.status, 200, await r.text());
-        const pub = await (await fetch(SUB + '/hub/public/events')).json(); assert.ok(pub.events.some(e => e.title === 'Alihakemisto'));
+        const pub = await (await fetch(SUB + '/hub/api/events')).json(); assert.ok(pub.events.some(e => e.title === 'Alihakemisto'));
+        for (const alias of ['/hub/public/events', '/hub/events']) assert.ok((await (await fetch(SUB + alias)).json()).events.some(e => e.title === 'Alihakemisto'), alias + ' ei toimi (public/-hakemiston kautta asennettu hub)');
         assert.strictEqual((await fetch(SUB + '/hub/')).status, 200);
+        const cal = await fetch(SUB + '/hub/'); assert.match(cal.headers.get('content-security-policy'), /frame-ancestors \*/, 'kalenteria ei voi upottaa');
+        assert.match((await fetch(SUB + '/hub/admin')).headers.get('content-security-policy'), /frame-ancestors 'none'/, 'hallintasivu upotettavissa');
+        assert.strictEqual((await fetch(SUB + '/hub/calendar.css')).status, 200);
     });
     await t('hallintasivu: kirjautuminen, CSRF-otsake, baarin lisäys avaimineen, asetukset', async () => {
         execFileSync('php', ['bin/admin.php', 'create', 'tester'], { input: 'testipassword12\n', env: process.env });
@@ -147,8 +151,8 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         // asetukset
         assert.strictEqual((await call('PUT', '/settings', { calendar_days_ahead: 3 })).status, 400);
         assert.strictEqual((await call('PUT', '/settings', { site_name: 'Testikalenteri', calendar_days_ahead: 30, footer_text: 'Alatunniste' })).status, 200);
-        assert.strictEqual((await plain('GET', '/public/config')).json.site_name, 'Testikalenteri');
-        assert.ok(!(await plain('GET', '/public/events')).json.events.some(e => e.date > day(31)), 'päivärajaus ei toimi');
+        assert.strictEqual((await plain('GET', '/api/config')).json.site_name, 'Testikalenteri');
+        assert.ok(!(await plain('GET', '/api/events')).json.events.some(e => e.date > day(31)), 'päivärajaus ei toimi');
         assert.ok((await call('PUT', '/settings', { worker_registration: false })).json.success);
         assert.strictEqual((await plain('POST', '/v1/workers', { email: 'suljettu@x.test', name: 'Suljettu', password: 'pitkasalasana1' })).status, 403);
         assert.ok((await call('PUT', '/settings', { worker_registration: true, calendar_days_ahead: 180 })).json.success);
@@ -163,7 +167,7 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
     await t('estetty baari ei pääse sisään eikä näy kalenterissa', async () => {
         execFileSync('php', ['bin/add_pub.php', '--suspend', 'baari-b'], { env: process.env });
         assert.strictEqual((await signed(B, 'baari-b', 'PUT', '/v1/events/b2', { title: 'Y', date: day(7) })).status, 401);
-        assert.ok(!(await plain('GET', '/public/events')).json.events.some(e => e.pub === 'Baari B'));
+        assert.ok(!(await plain('GET', '/api/events')).json.events.some(e => e.pub === 'Baari B'));
     });
     await t('kirjautumisyritykset rajoitettu (429)', async () => {
         let last = 0; for (let i = 0; i < 10; i++) last = (await plain('POST', '/v1/login', { email: 'ei@x.test', password: 'x' })).status; assert.strictEqual(last, 429);

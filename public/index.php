@@ -13,7 +13,7 @@ $path = rtrim((string)parse_url(relUri(), PHP_URL_PATH), '/') ?: '/';
 
 // CORS: julkinen kalenteri kaikille, muut vain sallituille origineille
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($path === '/public/events') header('Access-Control-Allow-Origin: *');
+if (in_array($path, ['/api/events', '/api/config', '/public/events', '/public/config'], true)) header('Access-Control-Allow-Origin: *');
 elseif ($origin !== '' && in_array($origin, cfg()['allowed_origins'] ?? [], true)) { header("Access-Control-Allow-Origin: $origin"); header('Vary: Origin'); }
 if ($method === 'OPTIONS') { header('Access-Control-Allow-Headers: Authorization, Content-Type'); header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE'); http_response_code(204); exit; }
 
@@ -23,15 +23,18 @@ $extId = '/^[A-Za-z0-9_.-]{1,64}$/';
 $m = [];
 
 // ---------- Julkinen ----------
-if ($method === 'GET' && $path === '/public/config') {
+// Julkiset osoitteet: /api/events ja /api/config (vanhat /public/… toimivat edelleen; /public on myös hakemiston nimi, joten /api on turvallisempi)
+if (in_array($path, ['/public/config', '/public/events'], true)) $path = '/api' . substr($path, 7);
+if ($path === '/events' || $path === '/config') $path = '/api' . $path;   // kun asennus on public/-hakemiston kautta (alihakemisto)
+if ($method === 'GET' && $path === '/api/config') {
     out(['site_name' => setting('site_name'), 'footer_text' => setting('footer_text'), 'calendar_enabled' => setting('calendar_enabled') === '1',
          'cities' => array_column(rows(q("SELECT DISTINCT p.city FROM pubs p JOIN events e ON e.pub_id = p.id WHERE p.status = 'active' AND p.city <> '' AND e.date >= CURDATE() ORDER BY p.city")), 'city')]);
 }
-if ($method === 'GET' && $path === '/public/events') {
+if ($method === 'GET' && $path === '/api/events') {
     if (setting('calendar_enabled') !== '1') out(['events' => []]);
     $from = isset($_GET['from']) ? dateStr($_GET['from'], 'from') : date('Y-m-d');
     $to = isset($_GET['to']) ? dateStr($_GET['to'], 'to') : date('Y-m-d', strtotime('+' . (int)setting('calendar_days_ahead') . ' days'));
-    $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
+    $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
     $city = isset($_GET['city']) ? (string)$_GET['city'] : '';
     $sql = "SELECT e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city
             FROM events e JOIN pubs p ON p.id = e.pub_id WHERE p.status = 'active' AND e.date BETWEEN ? AND ?";
@@ -177,10 +180,12 @@ if ($method === 'POST' && preg_match('#^/v1/applications/(\d+)/withdraw$#', $pat
     out(['success' => true]);
 }
 
-$assets = ['/' => ['calendar.html', 'text/html'], '/index.html' => ['calendar.html', 'text/html'], '/calendar.js' => ['calendar.js', 'application/javascript'], '/admin.js' => ['admin.js', 'application/javascript'], '/hub.css' => ['hub.css', 'text/css']];
+$assets = ['/' => ['calendar.html', 'text/html'], '/index.html' => ['calendar.html', 'text/html'], '/calendar.js' => ['calendar.js', 'application/javascript'], '/admin.js' => ['admin.js', 'application/javascript'], '/hub.css' => ['hub.css', 'text/css'], '/calendar.css' => ['calendar.css', 'text/css']];
 if ($method === 'GET' && isset($assets[$path])) {
     header('Content-Type: ' . $assets[$path][1] . '; charset=utf-8'); header('Cache-Control: no-cache');
-    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'self'; form-action 'none'");
+    // kalenterisivu saa olla upotettuna mihin tahansa sivuun (iframe); hallintasivu ei
+    $embeddable = in_array($assets[$path][0], ['calendar.html', 'calendar.js', 'calendar.css'], true);
+    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'self'; form-action 'none'" . ($embeddable ? '; frame-ancestors *' : "; frame-ancestors 'none'"));
     readfile(__DIR__ . '/' . $assets[$path][0]); exit;
 }
 fail('Ei löydy', 404);
