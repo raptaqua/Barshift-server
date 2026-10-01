@@ -9,6 +9,11 @@ Baarien omat tiedot (työntekijät, tunnit, vuorot, kassat) eivät koskaan tule 
 3. **Keikkatyöntekijä hallitsee omaa tietoaan.** Profiili on työntekijän oma, vapaaehtoinen. Baari näkee hakijan nimen, taidot ja viestin vasta hakemuksen jälkeen; yhteystiedot (sähköposti, puhelin) vasta kun baari hyväksyy hakemuksen. Tilin voi poistaa (`DELETE /v1/me`), jolloin myös hakemukset poistuvat.
 4. **Allekirjoitetut pyynnöt.** Jokainen baarin pyyntö allekirjoitetaan baarin Ed25519-avaimella. Avaimen voi kumota (`status = suspended`).
 
+## Baarin liittäminen
+Keskuksen ylläpitäjä lisää baarin hallintasivulta ja saa kertakäyttöisen **liitoskoodin** (voimassa 7 pv). Baarin client luo itse Ed25519-avainparin ja rekisteröi julkisen avaimen:
+
+`POST /v1/pair` (ei allekirjoitusta) runko `{code, public_key}` (base64, 32 tavua) → `{success, slug, name, city}`. Koodi vanhenee käytettäessä. Yksityinen avain ei koskaan poistu baarin asennuksesta. Uusi liitoskoodi vaihtaa avaimen (vanha toimii, kunnes uusi on liitetty).
+
 ## Baarin pyyntöjen allekirjoitus
 Otsakkeet:
 

@@ -45,15 +45,19 @@ const views = {
         const out = h('div', {});
         const slug = h('input', { placeholder: 'tunnus (esim. oma-baari)' }), name = h('input', { placeholder: 'Baarin nimi' }), city = h('input', { placeholder: 'Kaupunki' }), err = h('div', { class: 'err' });
         const add = async () => {
-            try { const r = await api('POST', '/pubs', { slug: slug.value, name: name.value, city: city.value }); showKey(out, r); b.replaceChildren(); await views.pubs(b); b.prepend(out); } catch (e) { msg(err, e.message); }
+            try { const r = await api('POST', '/pubs', { slug: slug.value, name: name.value, city: city.value }); showCode(out, r); slug.value = name.value = city.value = ''; msg(err, ''); loadList(); } catch (e) { msg(err, e.message); }
         };
-        b.append(h('div', { class: 'card' }, h('h2', {}, 'Lisää baari'), h('p', { class: 'muted' }, 'Palvelin luo baarille avainparin ja näyttää yksityisen avaimen kerran. Liitä näytetty rivi baarin client-asennuksen config.php-tiedostoon.'), h('div', { class: 'row' }, slug, name, city, h('button', { onclick: add }, 'Lisää')), err), out);
-        const pubs = (await api('GET', '/pubs')).pubs;
-        b.append(table([['Baari', r => r.name + ' (' + r.slug + ')'], ['Kaupunki', r => r.city], ['Tila', r => r.status === 'active' ? 'Aktiivinen' : 'Estetty'], ['Viimeksi yhteydessä', r => r.last_seen_at || 'ei vielä'], ['Tapahtumia', r => r.events], ['Avoimia vuoroja', r => r.open_shifts]], pubs, r => h('div', { class: 'row' },
-            h('button', { class: 'ghost', onclick: async () => { await api('PUT', '/pubs/' + r.id, { name: r.name, city: r.city, status: r.status === 'active' ? 'suspended' : 'active' }); start(); } }, r.status === 'active' ? 'Estä' : 'Aktivoi'),
-            h('button', { class: 'ghost', onclick: async () => { const n = prompt('Baarin nimi', r.name); if (n === null) return; const c = prompt('Kaupunki', r.city); if (c === null) return; await api('PUT', '/pubs/' + r.id, { name: n, city: c, status: r.status }); start(); } }, 'Muokkaa'),
-            h('button', { class: 'ghost', onclick: async () => { if (!confirm('Luodaanko uusi avain? Vanha lakkaa toimimasta heti.')) return; showKey(out, await api('POST', '/pubs/' + r.id + '/rotate_key')); } }, 'Uusi avain'),
-            h('button', { class: 'danger', onclick: async () => { if (confirm('Poistetaanko baari ja kaikki sen tapahtumat ja vuorot?')) { await api('DELETE', '/pubs/' + r.id); start(); } } }, 'Poista'))));
+        b.append(h('div', { class: 'card' }, h('h2', {}, 'Lisää baari'), h('p', { class: 'muted' }, 'Palvelin luo baarille kertakäyttöisen liitoskoodin. Anna koodi baarin ylläpitäjälle: hän liittää baarin tähän palvelimeen client-sovelluksensa hallinnasta (Baari → Asetukset → Keskuspalvelin). Koodia ei tarvitse kirjoittaa mihinkään tiedostoon.'), h('div', { class: 'row' }, slug, name, city, h('button', { onclick: add }, 'Lisää')), err), out);
+        const listBox = h('div', {}); b.append(listBox);
+        async function loadList() {
+            const pubs = (await api('GET', '/pubs')).pubs;
+            listBox.replaceChildren(table([['Baari', r => r.name + ' (' + r.slug + ')'], ['Kaupunki', r => r.city], ['Tila', r => r.status === 'pending' ? 'Odottaa liittämistä' : (r.status === 'active' ? 'Aktiivinen' : 'Estetty')], ['Viimeksi yhteydessä', r => r.last_seen_at || 'ei vielä'], ['Tapahtumia', r => r.events], ['Avoimia vuoroja', r => r.open_shifts]], pubs, r => h('div', { class: 'row' },
+                r.status !== 'pending' ? h('button', { class: 'ghost', onclick: async () => { await api('PUT', '/pubs/' + r.id, { name: r.name, city: r.city, status: r.status === 'active' ? 'suspended' : 'active' }); loadList(); } }, r.status === 'active' ? 'Estä' : 'Aktivoi') : null,
+                h('button', { class: 'ghost', onclick: async () => { const n = prompt('Baarin nimi', r.name); if (n === null) return; const c = prompt('Kaupunki', r.city); if (c === null) return; await api('PUT', '/pubs/' + r.id, { name: n, city: c, status: r.status === 'pending' ? 'suspended' : r.status }); loadList(); } }, 'Muokkaa'),
+                h('button', { class: 'ghost', onclick: async () => showCode(out, await api('POST', '/pubs/' + r.id + '/pairing_code')) }, r.paired ? 'Uusi liitoskoodi' : 'Näytä liitoskoodi'),
+                h('button', { class: 'danger', onclick: async () => { if (confirm('Poistetaanko baari ja kaikki sen tapahtumat ja vuorot?')) { await api('DELETE', '/pubs/' + r.id); loadList(); } } }, 'Poista'))));
+        }
+        await loadList();
     },
     async events(b) {
         b.append(table([['Pvm', r => r.date], ['Tapahtuma', r => r.title], ['Baari', r => r.pub + (r.city ? ', ' + r.city : '')], ['Hinta', r => r.price_text || '']], (await api('GET', '/events')).events,
@@ -80,7 +84,8 @@ const views = {
         b.append(h('div', { class: 'card' }, h('h2', {}, 'Vaihda salasana'), h('div', { class: 'row' }, cur, nw, h('button', { onclick: async () => { try { await api('POST', '/password', { current: cur.value, new: nw.value }); cur.value = nw.value = ''; msg(pst, 'Salasana vaihdettu', true); } catch (e) { msg(pst, e.message); } } }, 'Vaihda')), pst));
     },
 };
-function showKey(box, r) {
-    box.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Baarin avain – tallenna nyt'), h('p', { class: 'muted' }, 'Yksityinen avain näytetään vain kerran. Lisää rivi baarin client-asennuksen config.php-tiedostoon (return-taulukon sisään):'), h('pre', {}, r.config)));
+function showCode(box, r) {
+    box.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Liitoskoodi baarille ' + r.slug), h('p', { class: 'muted' }, 'Anna baarin ylläpitäjälle nämä kaksi tietoa. Koodi on kertakäyttöinen ja voimassa 7 päivää. Baarin sovelluksessa: Baari → Asetukset → Keskuspalvelin → Yhdistä.'),
+        h('p', {}, 'Keskuksen osoite:'), h('pre', {}, r.url), h('p', {}, 'Liitoskoodi:'), h('pre', {}, r.code)));
 }
 start();

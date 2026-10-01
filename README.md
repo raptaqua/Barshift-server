@@ -16,7 +16,7 @@ php bin/add_pub.php --suspend baari-a # estä baari
 Web-juuri on `public/` (kaikki pyynnöt `public/index.php`:lle). Cron päivittäin: `php bin/cleanup.php`.
 
 ## Hallintasivu
-Luo hallintatunnus: `php bin/admin.php create <tunnus>` ja kirjaudu osoitteessa `/admin`. Sivulta: baarien lisäys (palvelin luo avainparin ja näyttää client-asennuksen `config.php`-rivin kerran), esto/aktivointi, avaimen vaihto, tapahtumien ja keikkavuorojen poisto, keikkatyöläisten hallinta ja asetukset (sivuston nimi, kalenterin pituus, kalenteri ja rekisteröinti päälle/pois).
+Luo hallintatunnus: `php bin/admin.php create <tunnus>` ja kirjaudu osoitteessa `/admin`. Sivulta: baarien lisäys (palvelin luo kertakäyttöisen liitoskoodin; baari liittää itsensä koodilla client-sovelluksen hallinnasta, ja baarin yksityinen avain pysyy aina clientissa), esto/aktivointi, uusi liitoskoodi (avaimen vaihto), tapahtumien ja keikkavuorojen poisto, keikkatyöläisten hallinta ja asetukset (sivuston nimi, kalenterin pituus, kalenteri ja rekisteröinti päälle/pois).
 
 ## Asennuspolku
 Web-juuri voi olla `public/` (`.htaccess` ohjaa pyynnöt `index.php`:lle) tai repon juuri (juuren `index.php` + `.htaccess`). Alihakemisto (esim. `https://sivu.fi/hub/`) toimii: asennuspolku tunnistetaan automaattisesti tai asetetaan `config.php`:ssä (`'base_path' => '/hub'`). Baarin `hub.url` on silloin `https://sivu.fi/hub`.

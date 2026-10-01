@@ -77,3 +77,8 @@ CREATE TABLE IF NOT EXISTS `admins` (
 CREATE TABLE IF NOT EXISTS `settings` (
   `k` varchar(60) NOT NULL, `v` varchar(500) NOT NULL DEFAULT '', PRIMARY KEY (`k`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `pubs` MODIFY `status` enum('active','suspended','pending') NOT NULL DEFAULT 'active';
+ALTER TABLE `pubs` MODIFY `public_key` varchar(64) NOT NULL DEFAULT '';
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `pair_hash` char(64) DEFAULT NULL;
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `pair_expires` datetime DEFAULT NULL;

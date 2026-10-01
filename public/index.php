@@ -41,6 +41,20 @@ if ($method === 'GET' && $path === '/public/events') {
     out(['events' => rows(q($sql, $types, $args))]);
 }
 
+// ---------- Liittäminen (liitoskoodilla; ei allekirjoitusta, koska avain rekisteröidään tässä) ----------
+if ($method === 'POST' && $path === '/v1/pair') {
+    rateLimit('pair:' . ($_SERVER['REMOTE_ADDR'] ?? ''), 10, 3600);
+    $d = body(); $code = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)($d['code'] ?? '')));
+    $pk = base64_decode((string)($d['public_key'] ?? ''), true);
+    if (strlen($code) !== 20) fail('Virheellinen liitoskoodi', 400);
+    if ($pk === false || strlen($pk) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES) fail('Virheellinen julkinen avain', 400);
+    $p = one(q("SELECT id, slug, name, city, status FROM pubs WHERE pair_hash = ? AND pair_expires > NOW()", 's', [hash('sha256', $code)]));
+    if (!$p) fail('Liitoskoodi on väärä tai vanhentunut', 404);
+    $status = $p['status'] === 'suspended' ? 'suspended' : 'active';
+    q("UPDATE pubs SET public_key = ?, status = ?, pair_hash = NULL, pair_expires = NULL WHERE id = ?", 'ssi', [base64_encode($pk), $status, (int)$p['id']]);
+    out(['success' => true, 'slug' => $p['slug'], 'name' => $p['name'], 'city' => $p['city']]);
+}
+
 // ---------- Baarin rajapinta ----------
 if (preg_match('#^/v1/events/([^/]+)$#', $path, $m) && in_array($method, ['PUT', 'DELETE'], true)) {
     $pub = authPub(); $ext = $m[1];

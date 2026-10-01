@@ -125,16 +125,25 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await call('POST', '/login', { username: 'tester', password: 'testipassword12' })).status, 200);
         assert.ok((await call('GET', '/overview')).json.pubs >= 2);
         const add = await call('POST', '/pubs', { slug: 'uusi-baari', name: 'Uusi Baari', city: 'Oulu' }); assert.strictEqual(add.status, 201);
-        assert.match(add.json.config, /'pub_slug' => 'uusi-baari', 'private_key' => '[A-Za-z0-9+\/=]{80,}'/);
-        // luotu avain toimii allekirjoitukseen
-        const sk = crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(add.json.private_key, 'base64').subarray(0, 32)]), format: 'der', type: 'pkcs8' });
-        const k2 = { priv: sk };
-        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Avaimella', date: day(8) })).status, 200, 'hallinnasta luotu avain ei kelvannut');
+        assert.match(add.json.code, /^[A-Z2-9]{5}(-[A-Z2-9]{5}){3}$/); assert.ok(add.json.url);
+        assert.ok(!JSON.stringify(add.json).includes('private'), 'palvelin ei saa tuntea baarin yksityistä avainta');
+        // odottaa liittämistä: ei pääse sisään, ei näy kalenterissa
+        const k2 = kp();
+        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Ennen liittämistä', date: day(8) })).status, 401);
+        assert.strictEqual((await plain('POST', '/v1/pair', { code: 'AAAAA-AAAAA-AAAAA-AAAAA', public_key: k2.pub })).status, 404, 'väärä koodi kelpasi');
+        assert.strictEqual((await plain('POST', '/v1/pair', { code: add.json.code, public_key: 'ei-avain' })).status, 400);
+        const paired = await plain('POST', '/v1/pair', { code: add.json.code.toLowerCase(), public_key: k2.pub }); assert.strictEqual(paired.status, 200, JSON.stringify(paired.json)); assert.strictEqual(paired.json.slug, 'uusi-baari');
+        assert.strictEqual((await plain('POST', '/v1/pair', { code: add.json.code, public_key: kp().pub })).status, 404, 'koodi toimi kahdesti');
+        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Avaimella', date: day(8) })).status, 200, 'liitetty avain ei kelvannut');
         assert.strictEqual((await call('POST', '/pubs', { slug: 'uusi-baari', name: 'X' })).status, 409);
         assert.strictEqual((await call('POST', '/pubs', { slug: 'Väärä Tunnus', name: 'X' })).status, 400);
-        const list = (await call('GET', '/pubs')).json.pubs; const nb = list.find(p => p.slug === 'uusi-baari'); assert.ok(nb.last_seen_at);
-        const rot = await call('POST', `/pubs/${nb.id}/rotate_key`); assert.strictEqual(rot.status, 200);
+        const list = (await call('GET', '/pubs')).json.pubs; const nb = list.find(p => p.slug === 'uusi-baari'); assert.ok(nb.last_seen_at); assert.strictEqual(nb.status, 'active'); assert.ok(nb.paired);
+        // uusi liitoskoodi vaihtaa avaimen: vanha toimii kunnes uusi liitetään, sen jälkeen ei
+        const rot = await call('POST', `/pubs/${nb.id}/pairing_code`); assert.strictEqual(rot.status, 200);
+        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Vielä vanha', date: day(8) })).status, 200);
+        const k3 = kp(); assert.strictEqual((await plain('POST', '/v1/pair', { code: rot.json.code, public_key: k3.pub })).status, 200);
         assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Vanha avain', date: day(8) })).status, 401, 'vanha avain toimii yhä');
+        assert.strictEqual((await signed(k3, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Avaimella', date: day(8) })).status, 200);
         // asetukset
         assert.strictEqual((await call('PUT', '/settings', { calendar_days_ahead: 3 })).status, 400);
         assert.strictEqual((await call('PUT', '/settings', { site_name: 'Testikalenteri', calendar_days_ahead: 30, footer_text: 'Alatunniste' })).status, 200);

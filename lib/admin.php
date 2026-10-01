@@ -22,6 +22,17 @@ function newKeypair(): array {
     $kp = sodium_crypto_sign_keypair();
     return ['public' => base64_encode(sodium_crypto_sign_publickey($kp)), 'private' => base64_encode(sodium_crypto_sign_secretkey($kp))];
 }
+// Kertakäyttöinen liitoskoodi (7 pv). Baarin client luo oman avainparin ja rekisteröi julkisen avaimen koodilla; yksityinen avain ei koskaan poistu clientista.
+function newPairingCode(int $pubId): string {
+    $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; $raw = '';
+    for ($i = 0; $i < 20; $i++) $raw .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    q("UPDATE pubs SET pair_hash = ?, pair_expires = NOW() + INTERVAL 7 DAY WHERE id = ?", 'si', [hash('sha256', $raw), $pubId]);
+    return implode('-', str_split($raw, 5));
+}
+function pairingUrl(): string {
+    $scheme = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) ? 'https' : 'http';
+    return $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'hub.example.com') . hubBase();
+}
 function configSnippet(string $slug, string $private): string {
     $scheme = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https')) ? 'https' : 'http';
     $url = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'hub.example.com') . hubBase();
@@ -65,30 +76,30 @@ function handleAdminApi(string $method, string $rel): never {
     if ($method === 'GET' && $rel === '/pubs') {
         out(['pubs' => rows(q("SELECT p.id, p.slug, p.name, p.city, p.status, p.created_at, p.last_seen_at,
             (SELECT COUNT(*) FROM events e WHERE e.pub_id = p.id AND e.date >= CURDATE()) AS events,
-            (SELECT COUNT(*) FROM shifts s WHERE s.pub_id = p.id AND s.status = 'open' AND s.date >= CURDATE()) AS open_shifts FROM pubs p ORDER BY p.name"))]);
+            (SELECT COUNT(*) FROM shifts s WHERE s.pub_id = p.id AND s.status = 'open' AND s.date >= CURDATE()) AS open_shifts, (p.public_key <> '') AS paired, (p.pair_hash IS NOT NULL AND p.pair_expires > NOW()) AS code_valid FROM pubs p ORDER BY p.name"))]);
     }
     if ($method === 'POST' && $rel === '/pubs') {
         $d = body(); $slug = strtolower(trim((string)($d['slug'] ?? '')));
         if (!preg_match('/^[a-z0-9_-]{1,64}$/', $slug)) fail('Tunnus (slug): 1–64 merkkiä a–z, 0–9, - tai _');
         $name = str($d['name'] ?? null, 120, 'name', true); $city = (string)str($d['city'] ?? null, 80, 'city');
         if (one(q("SELECT id FROM pubs WHERE slug = ?", 's', [$slug]))) fail('Tunnus on jo käytössä', 409);
-        $kp = newKeypair();
-        q("INSERT INTO pubs (slug, name, city, public_key) VALUES (?,?,?,?)", 'ssss', [$slug, $name, $city, $kp['public']]);
-        out(['success' => true, 'slug' => $slug, 'private_key' => $kp['private'], 'config' => configSnippet($slug, $kp['private'])], 201);
+        q("INSERT INTO pubs (slug, name, city, public_key, status) VALUES (?,?,?,?, 'pending')", 'ssss', [$slug, $name, $city, '']);
+        $id = (int)db()->insert_id;
+        out(['success' => true, 'slug' => $slug, 'code' => newPairingCode($id), 'url' => pairingUrl()], 201);
     }
     if (preg_match('#^/pubs/(\d+)$#', $rel, $m)) {
         $id = (int)$m[1]; if (!one(q("SELECT id FROM pubs WHERE id = ?", 'i', [$id]))) fail('Ei löydy', 404);
         if ($method === 'PUT') {
             $d = body(); $name = str($d['name'] ?? null, 120, 'name', true); $city = (string)str($d['city'] ?? null, 80, 'city');
             $status = $d['status'] ?? 'active'; if (!in_array($status, ['active', 'suspended'], true)) fail('Virheellinen tila');
+            if ($status === 'active' && one(q("SELECT id FROM pubs WHERE id = ? AND public_key = ''", 'i', [$id]))) fail('Baari ei ole vielä liitetty: anna sille liitoskoodi');
             q("UPDATE pubs SET name = ?, city = ?, status = ? WHERE id = ?", 'sssi', [$name, $city, $status, $id]); out(['success' => true]);
         }
         if ($method === 'DELETE') { q("DELETE FROM pubs WHERE id = ?", 'i', [$id]); out(['success' => true]); }
     }
-    if ($method === 'POST' && preg_match('#^/pubs/(\d+)/rotate_key$#', $rel, $m)) {   // uusi avainpari (vanha lakkaa heti toimimasta)
+    if ($method === 'POST' && preg_match('#^/pubs/(\d+)/pairing_code$#', $rel, $m)) {   // uusi liitoskoodi (uusi yhteys / avaimen vaihto; vanha avain toimii kunnes uusi liitetään)
         $p = one(q("SELECT id, slug FROM pubs WHERE id = ?", 'i', [(int)$m[1]])); if (!$p) fail('Ei löydy', 404);
-        $kp = newKeypair(); q("UPDATE pubs SET public_key = ? WHERE id = ?", 'si', [$kp['public'], (int)$p['id']]);
-        out(['success' => true, 'private_key' => $kp['private'], 'config' => configSnippet($p['slug'], $kp['private'])]);
+        out(['success' => true, 'slug' => $p['slug'], 'code' => newPairingCode((int)$p['id']), 'url' => pairingUrl()]);
     }
 
     // ----- Sisältö -----
