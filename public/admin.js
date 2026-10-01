@@ -25,7 +25,7 @@ function showLogin() {
 }
 async function start() {
     try { await api('GET', '/me'); } catch (e) { return; }
-    const names = { overview: 'Yhteenveto', pubs: 'Baarit', events: 'Tapahtumat', shifts: 'Keikkavuorot', workers: 'Keikkatyöläiset', settings: 'Asetukset' };
+    const names = { overview: 'Yhteenveto', stats: 'Tilastot', pubs: 'Baarit', events: 'Tapahtumat', shifts: 'Keikkavuorot', workers: 'Keikkatyöläiset', settings: 'Asetukset' };
     const tabs = h('div', { class: 'tabs' }, Object.entries(names).map(([k, v]) => h('button', { class: k === tab ? 'on' : '', onclick: () => { tab = k; start(); } }, v)),
         h('a', { href: BASE + '/', target: '_blank', rel: 'noopener' }, h('button', { class: 'ghost' }, 'Avaa julkinen kalenteri ↗')),
         h('button', { class: 'ghost', onclick: async () => { await api('POST', '/logout'); showLogin(); } }, 'Kirjaudu ulos'));
@@ -49,6 +49,32 @@ const views = {
             h('div', { class: 'row' }, h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, calUrl), h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, h('button', {}, 'Avaa kalenteri')), b1, b2),
             h('p', { class: 'muted' }, 'Tapahtumat myös koneluettavana (JSON): ', h('a', { href: BASE + '/api/events', target: '_blank', rel: 'noopener' }, calUrl + 'api/events'))));
         b.append(h('div', { class: 'grid' }, st('pubs_active', 'Aktiivista baaria'), st('events', 'Tulevaa tapahtumaa'), st('open_shifts', 'Avointa keikkavuoroa'), st('workers', 'Keikkatyöläistä'), st('pending_applications', 'Käsittelemätöntä hakemusta')));
+    },
+    async stats(b) {
+        let days = Number(sessionStorage.getItem('hubStatDays') || 30);
+        const box = h('div', {});
+        const num = n => Number(n).toLocaleString('fi-FI');
+        const card = (n, l, sub) => h('div', { class: 'card stat' }, h('b', {}, num(n)), h('span', { class: 'muted' }, l), sub ? h('small', { class: 'muted' }, sub) : null);
+        async function load() {
+            const r = await api('GET', '/stats?days=' + days), o = r.overview, c = r.calendar;
+            const range = h('div', { class: 'row' }, [[7, '7 pv'], [30, '30 pv'], [90, '90 pv'], [365, '12 kk']].map(([d, l]) => h('button', { class: d === days ? '' : 'ghost', onclick: () => { days = d; sessionStorage.setItem('hubStatDays', d); load(); } }, l)));
+            const max = Math.max(1, ...c.series.map(s => s.views));
+            const bars = h('div', { class: 'bars', role: 'img', 'aria-label': 'Kalenterin avaukset päivittäin' }, c.series.map(s => h('div', { class: 'bar', title: s.day + ': ' + s.views + ' avausta, ' + s.uniques + ' kävijää, ' + s.opens + ' tapahtuman avausta, ' + s.links + ' linkin klikkausta' }, (() => { const i = h('i'); i.style.height = Math.round(100 * s.views / max) + '%'; return i; })())));
+            box.replaceChildren(
+                h('div', { class: 'card' }, h('h2', {}, 'Julkinen kalenteri'), h('p', { class: 'muted' }, 'Nimetön laskuri: IP-osoitteita tai evästeitä ei tallenneta. Kävijä lasketaan kerran päivässä, ja botit jätetään pois. Avaukset lasketaan istunnoittain.'), range,
+                    h('div', { class: 'grid' }, card(c.window.views, 'Kalenterin avausta', 'viimeiset ' + days + ' pv, yhteensä ' + num(c.total.views)), card(c.window.uniques, 'Kävijää (päivittäin laskettuna)', 'yhteensä ' + num(c.total.uniques)),
+                        card(c.window.opens, 'Tapahtuman avausta', 'yhteensä ' + num(c.total.opens)), card(c.window.links, 'Linkin avausta', 'Lisätiedot ja liput · yhteensä ' + num(c.total.links)), card(c.window.ics, 'Kalenteriin lisäystä', 'yhteensä ' + num(c.total.ics))),
+                    h('h3', {}, 'Avaukset päivittäin'), bars, h('div', { class: 'muted axis' }, h('span', {}, c.series[0].day), h('span', {}, c.series[c.series.length - 1].day))),
+                h('div', { class: 'card' }, h('h2', {}, 'Suosituimmat tapahtumat'), c.top_events.length ? h('table', {}, h('tr', {}, ['Tapahtuma', 'Baari', 'Pvm', 'Avauksia', 'Linkin klikkauksia', 'Kalenteriin'].map(x => h('th', {}, x))),
+                    c.top_events.map(e => h('tr', {}, h('td', {}, e.title), h('td', {}, e.pub), h('td', {}, e.date), h('td', {}, num(e.opens)), h('td', {}, num(e.links)), h('td', {}, num(e.ics))))) : h('p', { class: 'muted' }, 'Ei vielä avauksia.')),
+                h('div', { class: 'card' }, h('h2', {}, 'Yhteenveto'), h('div', { class: 'grid' }, card(o.pubs_active, 'Aktiivista baaria', o.pubs_pending ? o.pubs_pending + ' odottaa liittämistä' : null), card(o.events_upcoming, 'Tulevaa tapahtumaa', 'yhteensä ' + num(o.events_total)),
+                    card(o.shifts_open, 'Avointa keikkavuoroa', num(o.shifts_total) + ' vuoroa yhteensä, ' + num(o.shifts_filled) + ' täytetty'), card(o.applications_total, 'Hakemusta', o.applications_pending + ' käsittelemättä, ' + o.applications_accepted + ' hyväksytty'),
+                    card(o.applications_from_pubs, 'Baarien kautta tullutta hakemusta'), card(o.workers, 'Keikkatyöläistä'))),
+                h('div', { class: 'card' }, h('h2', {}, 'Baarikohtaiset luvut'), h('table', {}, h('tr', {}, ['Baari', 'Tapahtumia (tulevat / kaikki)', 'Keikkavuoroja (avoimia / täytetty / kaikki)', 'Hakemuksia vastaanotettu', 'Hakemuksia lähetetty', 'Tapahtumien avauksia', 'Linkin klikkauksia', 'Viimeksi yhteydessä'].map(x => h('th', {}, x))),
+                    r.pubs.map(p => h('tr', {}, h('td', {}, p.name + (p.city ? ', ' + p.city : '') + (p.status !== 'active' ? ' (' + p.status + ')' : '')), h('td', {}, p.events_upcoming + ' / ' + p.events_total), h('td', {}, p.shifts_open + ' / ' + p.shifts_filled + ' / ' + p.shifts_total),
+                        h('td', {}, p.applications_received), h('td', {}, p.applications_sent), h('td', {}, num(p.event_opens)), h('td', {}, num(p.event_links)), h('td', {}, p.last_seen_at || 'ei vielä'))))));
+        }
+        b.append(box); await load();
     },
     async pubs(b) {
         const out = h('div', {});

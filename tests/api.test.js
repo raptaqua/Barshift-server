@@ -48,7 +48,7 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await signed(B, 'baari-b', 'PUT', '/v1/events/b1', { title: 'Visa', date: day(6), time_start: '19:00', price_text: '5 €', url: 'https://b.example/visa' })).status, 200);
         const all = (await plain('GET', '/api/events')).json.events; assert.ok(all.length >= 2);
         const ev = all.find(e => e.title === 'Visa'); assert.strictEqual(ev.pub, 'Baari B'); assert.strictEqual(ev.city, 'Helsinki');
-        assert.deepStrictEqual(Object.keys(ev).sort(), ['address', 'city', 'date', 'description', 'lat', 'lng', 'price_text', 'pub', 'time_end', 'time_start', 'title', 'type', 'url', 'website']);
+        assert.deepStrictEqual(Object.keys(ev).sort(), ['address', 'city', 'date', 'description', 'id', 'lat', 'lng', 'price_text', 'pub', 'time_end', 'time_start', 'title', 'type', 'url', 'website']);
         const tku = (await plain('GET', '/api/events?city=Turku')).json.events; assert.ok(tku.length && tku.every(e => e.city === 'Turku'));
     });
     await t('baarin profiili (osoite, koordinaatit) näkyy tapahtumien mukana kartalle; virheelliset hylätään', async () => {
@@ -212,6 +212,37 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await call('POST', '/password', { current: 'väärä', new: 'uusisalasana123' })).status, 403);
         assert.strictEqual((await call('POST', '/logout')).status, 200); assert.strictEqual((await call('GET', '/overview')).status, 401);
         assert.strictEqual((await fetch(BASE + '/admin')).status, 200); assert.strictEqual((await fetch(BASE + '/admin.js')).status, 200);
+    });
+    await t('tilastot: kalenterin avaukset, uniikit kävijät, tapahtuman avaus ja linkin klikkaus; botit ja väärät pyynnöt ohitetaan', async () => {
+        const jar = {};
+        const call = async (method, path, body) => { const r = await fetch(BASE + '/admin/api' + path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json', 'X-Hub-Admin': '1', ...(jar.c ? { Cookie: jar.c } : {}) } }); const sc = r.headers.get('set-cookie'); if (sc) jar.c = sc.split(';')[0]; return { status: r.status, json: await r.json().catch(() => ({})) }; };
+        const track = (body, ua = 'Mozilla/5.0 (Test) Browser/1') => fetch(BASE + '/api/track', { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json', 'User-Agent': ua } });
+        assert.strictEqual((await call('GET', '/stats')).status, 401, 'tilastot ilman kirjautumista');
+        assert.strictEqual((await call('POST', '/login', { username: 'tester', password: 'testipassword12' })).status, 200);
+        const base = (await call('GET', '/stats?days=30')).json.calendar; assert.strictEqual(base.series.length, 30);
+        const ev = (await plain('GET', '/api/events')).json.events.find(e => e.title === 'Visa'); assert.ok(ev && ev.id > 0, 'tapahtuman id puuttuu julkisesta rajapinnasta');
+        assert.strictEqual((await track({ t: 'view' })).status, 204); assert.strictEqual((await track({ t: 'view' })).status, 204);   // sama kävijä kahdesti
+        assert.strictEqual((await track({ t: 'view' }, 'Mozilla/5.0 (Toinen) Browser/2')).status, 204);
+        assert.strictEqual((await track({ t: 'view' }, 'Googlebot/2.1')).status, 204); assert.strictEqual((await track({ t: 'view' }, 'curl/8')).status, 204);
+        assert.strictEqual((await track({ t: 'open', e: ev.id })).status, 204); assert.strictEqual((await track({ t: 'open', e: ev.id })).status, 204);
+        assert.strictEqual((await track({ t: 'link', e: ev.id })).status, 204); assert.strictEqual((await track({ t: 'ics', e: ev.id })).status, 204);
+        assert.strictEqual((await track({ t: 'open', e: 99999999 })).status, 204); assert.strictEqual((await track({ t: 'nonsense' })).status, 204); assert.strictEqual((await track({ t: 'link' })).status, 204);
+        const st = (await call('GET', '/stats?days=30')).json, c = st.calendar, d = k => c.total[k] - base.total[k];
+        assert.strictEqual(d('views'), 3, 'avauksia'); assert.strictEqual(d('uniques'), 2, 'uniikkeja kävijöitä'); assert.strictEqual(d('opens'), 2); assert.strictEqual(d('links'), 1); assert.strictEqual(d('ics'), 1);
+        assert.strictEqual(c.series[c.series.length - 1].day, day(0)); assert.ok(c.series[c.series.length - 1].views >= 3);
+        const top = c.top_events.find(e => e.id === ev.id); assert.ok(top && top.opens === 2 && top.links === 1 && top.title === 'Visa' && top.pub === 'Baari B', JSON.stringify(c.top_events));
+        // ei henkilötietoja kannassa
+        const seen = execFileSync('mysql', ['-N', '-h', process.env.TEST_DB_HOST || 'localhost', '-u', process.env.TEST_DB_USER || 'root', process.env.TEST_DB_NAME || 'barshift_hub_test', '-e', "SELECT COUNT(*) FROM stat_seen WHERE h NOT REGEXP '^[0-9a-f]{16}$'"]).toString().trim(); assert.strictEqual(seen, '0');
+        // yleiskatsaus ja baarikohtaiset luvut
+        assert.ok(st.overview.pubs_active >= 2 && st.overview.events_upcoming >= 2 && st.overview.shifts_total >= 1 && st.overview.applications_total >= 1);
+        const pa = st.pubs.find(p => p.name === 'Baari A'); assert.ok(pa.shifts_total >= 1 && pa.shifts_filled >= 1 && pa.applications_received >= 1, JSON.stringify(pa));
+        const pb = st.pubs.find(p => p.name === 'Baari B'); assert.strictEqual(pb.event_opens, 2); assert.strictEqual(pb.event_links, 1); assert.ok(pb.applications_sent >= 1);
+        // kalenteri pois päältä: ei lasketa
+        assert.strictEqual((await call('PUT', '/settings', { ...(await call('GET', '/settings')).json.settings, calendar_enabled: false })).status, 200);
+        await track({ t: 'view' }, 'Mozilla/5.0 (Kolmas) Browser/3'); assert.strictEqual(((await call('GET', '/stats?days=30')).json.calendar.total.views), c.total.views, 'laskettiin vaikka kalenteri on pois');
+        assert.strictEqual((await call('PUT', '/settings', { ...(await call('GET', '/settings')).json.settings, calendar_enabled: true })).status, 200);
+        // tapahtuman poisto poistaa sen tilastorivin
+        assert.strictEqual((await call('DELETE', `/events/${ev.id}`)).status, 200); assert.ok(!(await call('GET', '/stats?days=30')).json.calendar.top_events.some(e => e.id === ev.id));
     });
     await t('estetty baari ei pääse sisään eikä näy kalenterissa', async () => {
         execFileSync('php', ['bin/add_pub.php', '--suspend', 'baari-b'], { env: process.env });

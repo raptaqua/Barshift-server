@@ -99,3 +99,16 @@ ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_email` varchar(19
 ALTER TABLE `applications` ADD COLUMN IF NOT EXISTS `applicant_skills` varchar(300) DEFAULT NULL;
 ALTER TABLE `applications` ADD UNIQUE KEY IF NOT EXISTS `uq_pub_app` (`shift_id`,`from_pub_id`,`applicant_ref`);
 ALTER TABLE `applications` ADD FOREIGN KEY IF NOT EXISTS `fk_ap_pub` (`from_pub_id`) REFERENCES `pubs` (`id`) ON DELETE CASCADE;
+
+-- Julkisen kalenterin käyttötilastot (ei henkilötietoja)
+CREATE TABLE IF NOT EXISTS `stat_daily` (
+  `day` date NOT NULL, `views` int NOT NULL DEFAULT 0, `uniques` int NOT NULL DEFAULT 0, `opens` int NOT NULL DEFAULT 0, `links` int NOT NULL DEFAULT 0, `ics` int NOT NULL DEFAULT 0,
+  PRIMARY KEY (`day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `stat_event` (
+  `event_id` int NOT NULL, `opens` int NOT NULL DEFAULT 0, `links` int NOT NULL DEFAULT 0, `ics` int NOT NULL DEFAULT 0, `last_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`event_id`), CONSTRAINT `fk_st_ev` FOREIGN KEY (`event_id`) REFERENCES `events` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `stat_seen` (
+  `day` date NOT NULL, `h` char(16) NOT NULL, PRIMARY KEY (`day`,`h`)
+) ENGINE=InnoDB DEFAULT CHARSET=ascii;
