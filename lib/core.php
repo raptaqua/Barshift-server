@@ -12,6 +12,20 @@ function db(): mysqli {
     $c->set_charset('utf8mb4');
     return $c;
 }
+// Asennuspolku (esim. /hub, jos palvelu on alihakemistossa) ja pyyntöosoite sen jälkeen. Allekirjoitus lasketaan polulle ilman asennuspolkua.
+function hubBase(): string {
+    static $b; if ($b !== null) return $b;
+    $c = cfg()['base_path'] ?? null;
+    if (is_string($c)) return $b = rtrim($c, '/');
+    $script = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $b = '';
+    if (basename($script) === 'index.php') { $d = rtrim(dirname($script), '/'); if ($d !== '' && $d !== '.') $b = $d; }
+    return $b;
+}
+function relUri(): string {
+    $u = (string)($_SERVER['REQUEST_URI'] ?? '/'); $b = hubBase();
+    return ($b !== '' && strncmp($u, $b, strlen($b)) === 0) ? (substr($u, strlen($b)) ?: '/') : $u;
+}
 function fail(string $msg, int $code = 400): never { out(['error' => $msg], $code); }
 function out($data, int $code = 200): never {
     http_response_code($code);

@@ -2,12 +2,14 @@
 declare(strict_types=1);
 require __DIR__ . '/../lib/core.php';
 require __DIR__ . '/../lib/auth.php';
+require __DIR__ . '/../lib/settings.php';
+require __DIR__ . '/../lib/admin.php';
 
 set_exception_handler(function (Throwable $e) { error_log((string)$e); fail('Palvelinvirhe', 500); });
 header('X-Content-Type-Options: nosniff'); header('Referrer-Policy: no-referrer');
 
 $method = $_SERVER['REQUEST_METHOD'];
-$path = rtrim((string)parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '/') ?: '/';
+$path = rtrim((string)parse_url(relUri(), PHP_URL_PATH), '/') ?: '/';
 
 // CORS: julkinen kalenteri kaikille, muut vain sallituille origineille
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -15,13 +17,20 @@ if ($path === '/public/events') header('Access-Control-Allow-Origin: *');
 elseif ($origin !== '' && in_array($origin, cfg()['allowed_origins'] ?? [], true)) { header("Access-Control-Allow-Origin: $origin"); header('Vary: Origin'); }
 if ($method === 'OPTIONS') { header('Access-Control-Allow-Headers: Authorization, Content-Type'); header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE'); http_response_code(204); exit; }
 
+if (strncmp($path, '/admin/api/', 11) === 0) handleAdminApi($method, substr($path, 10));
+if ($path === '/admin' || $path === '/admin.html') { header('Content-Type: text/html; charset=utf-8'); header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"); readfile(__DIR__ . '/admin.html'); exit; }
 $extId = '/^[A-Za-z0-9_.-]{1,64}$/';
 $m = [];
 
 // ---------- Julkinen ----------
+if ($method === 'GET' && $path === '/public/config') {
+    out(['site_name' => setting('site_name'), 'footer_text' => setting('footer_text'), 'calendar_enabled' => setting('calendar_enabled') === '1',
+         'cities' => array_column(rows(q("SELECT DISTINCT p.city FROM pubs p JOIN events e ON e.pub_id = p.id WHERE p.status = 'active' AND p.city <> '' AND e.date >= CURDATE() ORDER BY p.city")), 'city')]);
+}
 if ($method === 'GET' && $path === '/public/events') {
+    if (setting('calendar_enabled') !== '1') out(['events' => []]);
     $from = isset($_GET['from']) ? dateStr($_GET['from'], 'from') : date('Y-m-d');
-    $to = isset($_GET['to']) ? dateStr($_GET['to'], 'to') : date('Y-m-d', strtotime('+180 days'));
+    $to = isset($_GET['to']) ? dateStr($_GET['to'], 'to') : date('Y-m-d', strtotime('+' . (int)setting('calendar_days_ahead') . ' days'));
     $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
     $city = isset($_GET['city']) ? (string)$_GET['city'] : '';
     $sql = "SELECT e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city
@@ -88,6 +97,7 @@ if ($method === 'POST' && preg_match('#^/v1/applications/(\d+)/decision$#', $pat
 
 // ---------- Keikkatyöntekijä ----------
 if ($method === 'POST' && $path === '/v1/workers') {
+    if (setting('worker_registration') !== '1') fail('Rekisteröinti on suljettu', 403);
     rateLimit('reg:' . ($_SERVER['REMOTE_ADDR'] ?? ''), 10, 3600);
     $d = body();
     $email = strtolower((string)str($d['email'] ?? null, 190, 'email', true));
@@ -153,6 +163,10 @@ if ($method === 'POST' && preg_match('#^/v1/applications/(\d+)/withdraw$#', $pat
     out(['success' => true]);
 }
 
-if ($path === '/' || $path === '/index.html') { header('Content-Type: text/html; charset=utf-8'); readfile(__DIR__ . '/calendar.html'); exit; }
-if ($path === '/calendar.js') { header('Content-Type: application/javascript; charset=utf-8'); readfile(__DIR__ . '/calendar.js'); exit; }
+$assets = ['/' => ['calendar.html', 'text/html'], '/index.html' => ['calendar.html', 'text/html'], '/calendar.js' => ['calendar.js', 'application/javascript'], '/admin.js' => ['admin.js', 'application/javascript'], '/hub.css' => ['hub.css', 'text/css']];
+if ($method === 'GET' && isset($assets[$path])) {
+    header('Content-Type: ' . $assets[$path][1] . '; charset=utf-8'); header('Cache-Control: no-cache');
+    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'self'; form-action 'none'");
+    readfile(__DIR__ . '/' . $assets[$path][0]); exit;
+}
 fail('Ei löydy', 404);

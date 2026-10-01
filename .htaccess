@@ -1,0 +1,6 @@
+# Kun web-juuri on repon juuri: estä sisäiset tiedostot ja ohjaa muut pyynnöt index.php:lle
+RewriteEngine On
+RewriteRule ^(lib|db|bin|tests|\.git|\.github)(/|$) - [F,L]
+RewriteRule ^(config\.php|config\.example\.php|.*\.md)$ - [F,L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]

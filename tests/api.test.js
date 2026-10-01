@@ -1,6 +1,6 @@
 // Keskuspalvelimen testit: allekirjoitus, replay, tapahtumat, vuorot, hakemukset, yksityisyys
 const assert = require('assert'), crypto = require('crypto'), { execFileSync } = require('child_process');
-const BASE = process.env.HUB_BASE;
+const BASE = process.env.HUB_BASE, SUB = process.env.HUB_SUB;
 const kp = () => { const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519'); return { pub: publicKey.export({ type: 'spki', format: 'der' }).subarray(12).toString('base64'), priv: privateKey }; };
 function addPub(slug, name, city, pub) { execFileSync('php', ['bin/add_pub.php', slug, name, city, pub], { env: process.env }); }
 async function signed(k, slug, method, path, body, over = {}) {
@@ -102,6 +102,54 @@ const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
         assert.strictEqual((await plain('DELETE', '/v1/me', { password: 'pitkasalasana1' }, w1)).status, 200);
         assert.strictEqual((await plain('GET', '/v1/me', undefined, w1)).status, 401, 'istunto toimii tilin poiston jälkeen');
         const apps = (await signed(A, 'baari-a', 'GET', '/v1/applications?since_id=0')).json.applications; assert.ok(!apps.some(a => a.name === 'Aino Keikka'), 'poistetun käyttäjän tiedot jäivät');
+    });
+    await t('alihakemistoasennus (base_path): allekirjoitus lasketaan polulle ilman asennuspolkua', async () => {
+        const raw = JSON.stringify({ title: 'Alihakemisto', date: day(9) }), ts = String(Math.floor(Date.now() / 1000)), nonce = crypto.randomBytes(12).toString('hex');
+        const msg = `PUT\n/v1/events/sub1\n${ts}\n${nonce}\n${crypto.createHash('sha256').update(raw).digest('hex')}`;
+        const r = await fetch(SUB + '/hub/v1/events/sub1', { method: 'PUT', body: raw, headers: { 'X-Pub': 'baari-a', 'X-Timestamp': ts, 'X-Nonce': nonce, 'X-Signature': crypto.sign(null, Buffer.from(msg), A.priv).toString('base64') } });
+        assert.strictEqual(r.status, 200, await r.text());
+        const pub = await (await fetch(SUB + '/hub/public/events')).json(); assert.ok(pub.events.some(e => e.title === 'Alihakemisto'));
+        assert.strictEqual((await fetch(SUB + '/hub/')).status, 200);
+    });
+    await t('hallintasivu: kirjautuminen, CSRF-otsake, baarin lisäys avaimineen, asetukset', async () => {
+        execFileSync('php', ['bin/admin.php', 'create', 'tester'], { input: 'testipassword12\n', env: process.env });
+        const jar = {};
+        const call = async (method, path, body, hdr = { 'X-Hub-Admin': '1' }) => {
+            const r = await fetch(BASE + '/admin/api' + path, { method, body: body === undefined ? undefined : JSON.stringify(body), headers: { 'Content-Type': 'application/json', ...hdr, ...(jar.c ? { Cookie: jar.c } : {}) } });
+            const sc = r.headers.get('set-cookie'); if (sc) jar.c = sc.split(';')[0];
+            return { status: r.status, json: await r.json().catch(() => ({})) };
+        };
+        assert.strictEqual((await call('GET', '/overview')).status, 401);
+        assert.strictEqual((await call('POST', '/login', { username: 'tester', password: 'testipassword12' }, {})).status, 403, 'CSRF-otsakkeeton pyyntö meni läpi');
+        assert.strictEqual((await call('POST', '/login', { username: 'tester', password: 'väärä-salasana-1' })).status, 401);
+        assert.strictEqual((await call('POST', '/login', { username: 'tester', password: 'testipassword12' })).status, 200);
+        assert.ok((await call('GET', '/overview')).json.pubs >= 2);
+        const add = await call('POST', '/pubs', { slug: 'uusi-baari', name: 'Uusi Baari', city: 'Oulu' }); assert.strictEqual(add.status, 201);
+        assert.match(add.json.config, /'pub_slug' => 'uusi-baari', 'private_key' => '[A-Za-z0-9+\/=]{80,}'/);
+        // luotu avain toimii allekirjoitukseen
+        const sk = crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), Buffer.from(add.json.private_key, 'base64').subarray(0, 32)]), format: 'der', type: 'pkcs8' });
+        const k2 = { priv: sk };
+        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Avaimella', date: day(8) })).status, 200, 'hallinnasta luotu avain ei kelvannut');
+        assert.strictEqual((await call('POST', '/pubs', { slug: 'uusi-baari', name: 'X' })).status, 409);
+        assert.strictEqual((await call('POST', '/pubs', { slug: 'Väärä Tunnus', name: 'X' })).status, 400);
+        const list = (await call('GET', '/pubs')).json.pubs; const nb = list.find(p => p.slug === 'uusi-baari'); assert.ok(nb.last_seen_at);
+        const rot = await call('POST', `/pubs/${nb.id}/rotate_key`); assert.strictEqual(rot.status, 200);
+        assert.strictEqual((await signed(k2, 'uusi-baari', 'PUT', '/v1/events/u1', { title: 'Vanha avain', date: day(8) })).status, 401, 'vanha avain toimii yhä');
+        // asetukset
+        assert.strictEqual((await call('PUT', '/settings', { calendar_days_ahead: 3 })).status, 400);
+        assert.strictEqual((await call('PUT', '/settings', { site_name: 'Testikalenteri', calendar_days_ahead: 30, footer_text: 'Alatunniste' })).status, 200);
+        assert.strictEqual((await plain('GET', '/public/config')).json.site_name, 'Testikalenteri');
+        assert.ok(!(await plain('GET', '/public/events')).json.events.some(e => e.date > day(31)), 'päivärajaus ei toimi');
+        assert.ok((await call('PUT', '/settings', { worker_registration: false })).json.success);
+        assert.strictEqual((await plain('POST', '/v1/workers', { email: 'suljettu@x.test', name: 'Suljettu', password: 'pitkasalasana1' })).status, 403);
+        assert.ok((await call('PUT', '/settings', { worker_registration: true, calendar_days_ahead: 180 })).json.success);
+        // sisällön hallinta
+        const evs = (await call('GET', '/events')).json.events; const ev = evs.find(e => e.title === 'Avaimella'); assert.ok(ev);
+        assert.strictEqual((await call('DELETE', '/events/' + ev.id)).status, 200);
+        assert.ok(!(await call('GET', '/events')).json.events.some(e => e.title === 'Avaimella'));
+        assert.strictEqual((await call('POST', '/password', { current: 'väärä', new: 'uusisalasana123' })).status, 403);
+        assert.strictEqual((await call('POST', '/logout')).status, 200); assert.strictEqual((await call('GET', '/overview')).status, 401);
+        assert.strictEqual((await fetch(BASE + '/admin')).status, 200); assert.strictEqual((await fetch(BASE + '/admin.js')).status, 200);
     });
     await t('estetty baari ei pääse sisään eikä näy kalenterissa', async () => {
         execFileSync('php', ['bin/add_pub.php', '--suspend', 'baari-b'], { env: process.env });

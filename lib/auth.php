@@ -10,13 +10,14 @@ function authPub(): array {
     if (!$pub || $pub['status'] !== 'active') fail('Tuntematon tai estetty baari', 401);
     $pk = base64_decode($pub['public_key'], true); $sg = base64_decode($sig, true);
     if ($pk === false || strlen($pk) !== SODIUM_CRYPTO_SIGN_PUBLICKEYBYTES || $sg === false || strlen($sg) !== SODIUM_CRYPTO_SIGN_BYTES) fail('Allekirjoitus ei kelpaa', 401);
-    $msg = $_SERVER['REQUEST_METHOD'] . "\n" . $_SERVER['REQUEST_URI'] . "\n" . $ts . "\n" . $nonce . "\n" . hash('sha256', rawBody());
+    $msg = $_SERVER['REQUEST_METHOD'] . "\n" . relUri() . "\n" . $ts . "\n" . $nonce . "\n" . hash('sha256', rawBody());
     if (!sodium_crypto_sign_verify_detached($sg, $msg, $pk)) fail('Allekirjoitus ei kelpaa', 401);
     // kertakäyttöinen nonce (vasta allekirjoituksen tarkistuksen jälkeen)
     q("DELETE FROM nonces WHERE ts < ?", 'i', [time() - 700]);
     $st = db()->prepare("INSERT INTO nonces (pub_id, nonce, ts) VALUES (?, ?, ?)");
     $pid = (int)$pub['id']; $now = time(); $st->bind_param('isi', $pid, $nonce, $now);
     if (!$st->execute()) fail('Nonce on jo käytetty', 401);
+    q("UPDATE pubs SET last_seen_at = NOW() WHERE id = ?", 'i', [$pid]);
     return $pub;
 }
 

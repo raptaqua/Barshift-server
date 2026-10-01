@@ -65,3 +65,15 @@ CREATE TABLE IF NOT EXISTS `applications` (
 CREATE TABLE IF NOT EXISTS `rate_limits` (
   `k` varchar(120) NOT NULL, `ts` int NOT NULL, KEY `idx_k` (`k`,`ts`)
 ) ENGINE=InnoDB DEFAULT CHARSET=ascii;
+
+ALTER TABLE `pubs` ADD COLUMN IF NOT EXISTS `last_seen_at` datetime DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS `admins` (
+  `id` int NOT NULL AUTO_INCREMENT, `username` varchar(60) NOT NULL, `password_hash` varchar(255) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`), UNIQUE KEY `uq_user` (`username`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `settings` (
+  `k` varchar(60) NOT NULL, `v` varchar(500) NOT NULL DEFAULT '', PRIMARY KEY (`k`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

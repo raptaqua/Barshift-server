@@ -1,0 +1,4 @@
+# Kun web-juuri on public/: kaikki pyynnöt, jotka eivät ole tiedostoja, menevät index.php:lle
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]
