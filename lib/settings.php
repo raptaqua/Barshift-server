@@ -6,7 +6,8 @@ const HUB_SETTING_DEFAULTS = [
     'calendar_enabled' => '1',          // julkinen kalenterisivu ja /public/events
     'calendar_days_ahead' => '180',     // kuinka pitkälle eteenpäin tapahtumat näytetään (7–730)
     'worker_registration' => '1',       // keikkatyöläisten rekisteröinti päällä
-    'footer_text' => '',                // vapaa teksti kalenterisivun alareunaan (enintään 300 merkkiä)
+    'footer_text' => '',
+    'map_tile_url' => '',                // oma karttapalvelin (https, sisältää {z}/{x}/{y}); tyhjä = OpenStreetMap                // vapaa teksti kalenterisivun alareunaan (enintään 300 merkkiä)
 ];
 function settingsAll(): array {
     static $c; if ($c !== null) return $c;
@@ -24,6 +25,7 @@ function settingsValidate(array $in): array {
             case 'site_name': if ($v === '' || mb_strlen($v) > 80) fail('Sivuston nimi: 1–80 merkkiä'); break;
             case 'calendar_enabled': case 'worker_registration': $v = in_array($v, ['1', 'true', 'on'], true) ? '1' : '0'; break;
             case 'calendar_days_ahead': if (!ctype_digit($v) || (int)$v < 7 || (int)$v > 730) fail('Päiviä eteenpäin: 7–730'); break;
+            case 'map_tile_url': if ($v !== '' && (!preg_match('#^https://[^\s"\'<>]+$#', $v) || !str_contains($v, '{z}') || !str_contains($v, '{x}') || !str_contains($v, '{y}'))) fail('Karttapalvelun osoite: https://… ja sisältää {z}/{x}/{y}'); break;
             case 'footer_text': if (mb_strlen($v) > 300) fail('Alatunniste: enintään 300 merkkiä'); break;
         }
         $out[$k] = $v;
@@ -32,4 +34,10 @@ function settingsValidate(array $in): array {
 }
 function settingsSave(array $vals): void {
     foreach ($vals as $k => $v) q("INSERT INTO settings (k, v) VALUES (?, ?) ON DUPLICATE KEY UPDATE v = VALUES(v)", 'ss', [$k, $v]);
+}
+
+// Karttapalikoiden alkuperä Content-Security-Policyyn
+function tileOrigin(): string {
+    $u = setting('map_tile_url'); $p = $u !== '' ? parse_url(str_replace(['{z}', '{x}', '{y}', '{s}'], ['0', '0', '0', 'a'], $u)) : null;
+    return $p && !empty($p['host']) ? 'https://' . $p['host'] . (!empty($p['port']) ? ':' . $p['port'] : '') : 'https://tile.openstreetmap.org';
 }

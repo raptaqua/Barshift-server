@@ -83,12 +83,12 @@ const views = {
     async settings(b) {
         const s = (await api('GET', '/settings')).settings, st = h('div', {});
         const f = { site_name: h('input', { value: s.site_name, maxlength: 80 }), days: h('input', { type: 'number', min: 7, max: 730, value: s.calendar_days_ahead }), footer: h('textarea', { rows: 2, maxlength: 300 }, s.footer_text),
-            cal: h('input', { type: 'checkbox', checked: s.calendar_enabled === '1' }), reg: h('input', { type: 'checkbox', checked: s.worker_registration === '1' }) };
-        const save = async () => { try { await api('PUT', '/settings', { site_name: f.site_name.value, calendar_days_ahead: f.days.value, footer_text: f.footer.value, calendar_enabled: f.cal.checked, worker_registration: f.reg.checked }); msg(st, 'Tallennettu', true); } catch (e) { msg(st, e.message); } };
+            tile: h('input', { value: s.map_tile_url, placeholder: 'tyhjä = OpenStreetMap', style: 'width:100%' }), cal: h('input', { type: 'checkbox', checked: s.calendar_enabled === '1' }), reg: h('input', { type: 'checkbox', checked: s.worker_registration === '1' }) };
+        const save = async () => { try { await api('PUT', '/settings', { site_name: f.site_name.value, calendar_days_ahead: f.days.value, footer_text: f.footer.value, map_tile_url: f.tile.value, calendar_enabled: f.cal.checked, worker_registration: f.reg.checked }); msg(st, 'Tallennettu', true); } catch (e) { msg(st, e.message); } };
         b.append(h('div', { class: 'card' }, h('h2', {}, 'Asetukset'),
             h('p', {}, h('label', {}, 'Sivuston nimi ', f.site_name)), h('p', {}, h('label', {}, 'Tapahtumat näkyvissä (päivää eteenpäin) ', f.days)),
             h('p', {}, h('label', {}, f.cal, ' Julkinen kalenteri käytössä')), h('p', {}, h('label', {}, f.reg, ' Keikkatyöläisten rekisteröinti auki')),
-            h('p', {}, h('label', {}, 'Kalenterisivun alatunniste ', f.footer)), h('button', { onclick: save }, 'Tallenna'), st));
+            h('p', {}, h('label', {}, 'Kalenterisivun alatunniste ', f.footer)), h('p', {}, h('label', {}, 'Karttapalvelun osoite ', f.tile), h('br'), h('span', { class: 'muted' }, 'Jos kartassa lukee "Access blocked", OpenStreetMapin ilmainen palvelin on estänyt liikenteen (runsas käyttö). Käytä silloin omaa tai maksullista palvelua, esim. https://api.maptiler.com/maps/streets/256/{z}/{x}/{y}.png?key=AVAIN')), h('button', { onclick: save }, 'Tallenna'), st));
         const cur = h('input', { type: 'password', placeholder: 'Nykyinen salasana', autocomplete: 'current-password' }), nw = h('input', { type: 'password', placeholder: 'Uusi salasana (väh. 12 merkkiä)', autocomplete: 'new-password' }), pst = h('div', {});
         b.append(h('div', { class: 'card' }, h('h2', {}, 'Vaihda salasana'), h('div', { class: 'row' }, cur, nw, h('button', { onclick: async () => { try { await api('POST', '/password', { current: cur.value, new: nw.value }); cur.value = nw.value = ''; msg(pst, 'Salasana vaihdettu', true); } catch (e) { msg(pst, e.message); } } }, 'Vaihda')), pst));
     },

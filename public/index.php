@@ -6,7 +6,7 @@ require __DIR__ . '/../lib/settings.php';
 require __DIR__ . '/../lib/admin.php';
 
 set_exception_handler(function (Throwable $e) { error_log((string)$e); fail('Palvelinvirhe', 500); });
-header('X-Content-Type-Options: nosniff'); header('Referrer-Policy: no-referrer');
+header('X-Content-Type-Options: nosniff'); header('Referrer-Policy: strict-origin-when-cross-origin');   // OSM-karttapalikat vaativat Referer-otsakkeen (muuten 403 Access blocked)
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = rtrim((string)parse_url(relUri(), PHP_URL_PATH), '/') ?: '/';
@@ -28,7 +28,7 @@ if (in_array($path, ['/public/config', '/public/events'], true)) $path = '/api' 
 if ($path === '/events' || $path === '/config') $path = '/api' . $path;   // kun asennus on public/-hakemiston kautta (alihakemisto)
 if ($method === 'GET' && $path === '/api/config') {
     out(['site_name' => setting('site_name'), 'footer_text' => setting('footer_text'), 'calendar_enabled' => setting('calendar_enabled') === '1',
-         'cities' => array_column(rows(q("SELECT DISTINCT p.city FROM pubs p JOIN events e ON e.pub_id = p.id WHERE p.status = 'active' AND p.city <> '' AND e.date >= CURDATE() ORDER BY p.city")), 'city')]);
+         'tile_url' => setting('map_tile_url') ?: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 'cities' => array_column(rows(q("SELECT DISTINCT p.city FROM pubs p JOIN events e ON e.pub_id = p.id WHERE p.status = 'active' AND p.city <> '' AND e.date >= CURDATE() ORDER BY p.city")), 'city')]);
 }
 if ($method === 'GET' && $path === '/api/events') {
     if (setting('calendar_enabled') !== '1') out(['events' => []]);
@@ -200,7 +200,7 @@ if ($method === 'GET' && isset($assets[$path])) {
     header('Content-Type: ' . $assets[$path][1] . '; charset=utf-8'); header('Cache-Control: no-cache');
     // kalenterisivu saa olla upotettuna mihin tahansa sivuun (iframe); hallintasivu ei
     $embeddable = in_array($assets[$path][0], ['calendar.html', 'calendar.js', 'calendar.css'], true);
-    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; base-uri 'self'; form-action 'none'" . ($embeddable ? '; frame-ancestors *' : "; frame-ancestors 'none'"));
+    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: " . tileOrigin() . "; base-uri 'self'; form-action 'none'" . ($embeddable ? '; frame-ancestors *' : "; frame-ancestors 'none'"));
     readfile(__DIR__ . '/' . $assets[$path][0]); exit;
 }
 fail('Ei löydy', 404);

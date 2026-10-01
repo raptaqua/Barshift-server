@@ -85,7 +85,7 @@ function renderMap(box, rows) {
     box.append(el('div', { class: 'mapwrap' }, mapEl, side));
     if (typeof L === 'undefined') { mapEl.textContent = 'Karttaa ei voitu ladata.'; }
     else {
-        S.map = L.map(mapEl, { scrollWheelZoom: false }); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(S.map);
+        S.map = L.map(mapEl, { scrollWheelZoom: false }); L.tileLayer(S.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(S.map);
         const markers = located.map(p => {
             const icon = L.divIcon({ className: '', html: `<div class="pin"><span>${p.evs.length}</span></div>`, iconSize: [36, 36], iconAnchor: [18, 36], popupAnchor: [0, -34] });
             const pop = el('div', { class: 'pp' }, el('h4', {}, p.pub), el('div', { class: 'cnt' }, [p.address, p.city].filter(Boolean).join(', ')),
@@ -156,7 +156,7 @@ async function share() {
     $('q').addEventListener('input', e => { S.q = e.target.value; refresh(); }); $('share').addEventListener('click', share);
     $('ov').addEventListener('click', e => { if (e.target.id === 'ov') closeEvent(); }); document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEvent(); });
     try {
-        const c = await getJson('/api/config'); const t = $('title'); if (t) t.textContent = c.site_name; document.title = c.site_name; $('footer').textContent = c.footer_text || ''; S.cities = c.cities || [];
+        const c = await getJson('/api/config'); const t = $('title'); if (t) t.textContent = c.site_name; document.title = c.site_name; $('footer').textContent = c.footer_text || ''; S.cities = c.cities || []; S.tileUrl = c.tile_url;
         if (!c.calendar_enabled) { $('view').textContent = 'Kalenteri ei ole käytössä.'; return; }
     } catch (e) { /* asetukset eivät estä tapahtumien näyttöä */ }
     try { S.events = (await getJson('/api/events?limit=500')).events || []; if (!S.cities.length) S.cities = [...new Set(S.events.map(e => e.city).filter(Boolean))].sort(); refresh(); }

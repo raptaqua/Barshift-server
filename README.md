@@ -21,6 +21,9 @@ Kalenteri on hubin juuriosoitteessa (`https://sivu.fi/hub/`): lista-, kuukausi- 
 ## Hallintasivu
 Luo hallintatunnus: `php bin/admin.php create <tunnus>` ja kirjaudu osoitteessa `/admin`. Sivulta: baarien lisäys (palvelin luo kertakäyttöisen liitoskoodin; baari liittää itsensä koodilla client-sovelluksen hallinnasta, ja baarin yksityinen avain pysyy aina clientissa), esto/aktivointi, uusi liitoskoodi (avaimen vaihto), tapahtumien ja keikkavuorojen poisto, keikkatyöläisten hallinta ja asetukset (sivuston nimi, kalenterin pituus, kalenteri ja rekisteröinti päälle/pois).
 
+## Kartta
+Kartta käyttää oletuksena OpenStreetMapin ilmaisia karttapalikoita. Ne vaativat Referer-otsakkeen (hub lähettää sen) ja rajoittavat runsasta käyttöä: jos kartassa lukee *Access blocked*, vaihda oma karttapalvelu hallinnassa (Asetukset → Karttapalvelun osoite, esim. MapTiler tai Stadia; osoite sisältää `{z}/{x}/{y}`).
+
 ## Asennuspolku
 Web-juuri voi olla `public/` (`.htaccess` ohjaa pyynnöt `index.php`:lle) tai repon juuri (juuren `index.php` + `.htaccess`). Alihakemisto (esim. `https://sivu.fi/hub/`) toimii: asennuspolku tunnistetaan automaattisesti tai asetetaan `config.php`:ssä (`'base_path' => '/hub'`). Baarin `hub.url` on silloin `https://sivu.fi/hub`.
 
