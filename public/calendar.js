@@ -26,6 +26,13 @@ async function getJson(path) {
     if (!r.ok) throw new Error(j.error || 'Virhe ' + r.status);
     return j;
 }
+// Nimetön käyttötilasto (ei evästeitä): sivun avaus kerran per istunto, tapahtuman avaus, linkin klikkaus ja kalenteriin lisäys
+function track(t, id) {
+    try {
+        if (t === 'view') { if (sessionStorage.getItem('hubViewed')) return; sessionStorage.setItem('hubViewed', '1'); }
+        fetch(API + '/api/track', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t, e: id }) }).catch(() => {});
+    } catch (e) { /* tilasto ei saa estää sivun käyttöä */ }
+}
 function timeText(e) { const a = hm(e.time_start), b = hm(e.time_end); return a ? (b ? `klo ${a}–${b}` : `klo ${a}`) : ''; }
 function rangeBounds() {   // [alku, loppu] päivämerkkijonoina tai null (kaikki)
     const now = new Date(), t = new Date(now.getFullYear(), now.getMonth(), now.getDate()), add = n => ymd(new Date(t.getFullYear(), t.getMonth(), t.getDate() + n));
@@ -128,9 +135,9 @@ function openEvent(e) {
     m.replaceChildren(el('div', { class: 'img', style: `--g:${grad(e.type)}` }, t[0]), el('button', { class: 'x', type: 'button', 'aria-label': 'Sulje', onclick: closeEvent }, '×'),
         el('div', { class: 'body' }, el('h2', {}, e.title), el('div', { class: 'meta' }, `📅 ${DOWL[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()} ${timeText(e)}`), el('div', { class: 'meta' }, '📍 ' + e.pub + (e.city ? ', ' + e.city : '')),
             e.price_text ? el('div', { class: 'meta' }, '🎟 ' + e.price_text) : null, e.description ? el('p', {}, e.description) : null,
-            el('div', { class: 'acts' }, e.url && /^https?:\/\//i.test(e.url) ? el('a', { class: 'btn primary', href: e.url, target: '_blank', rel: 'noopener' }, 'Lisätiedot ja liput') : null,
-                el('button', { class: 'btn', type: 'button', onclick: () => downloadIcs(e) }, '📅 Lisää kalenteriin'))));
-    $('ov').classList.add('open'); m.querySelector('.x').focus();
+            el('div', { class: 'acts' }, e.url && /^https?:\/\//i.test(e.url) ? el('a', { class: 'btn primary', href: e.url, target: '_blank', rel: 'noopener', onclick: () => track('link', e.id) }, 'Lisätiedot ja liput') : null,
+                el('button', { class: 'btn', type: 'button', onclick: () => { track('ics', e.id); downloadIcs(e); } }, '📅 Lisää kalenteriin'))));
+    $('ov').classList.add('open'); m.querySelector('.x').focus(); track('open', e.id);
 }
 function closeEvent() { $('ov').classList.remove('open'); }
 function downloadIcs(e) {
@@ -159,6 +166,7 @@ async function share() {
         const c = await getJson('/api/config'); const t = $('title'); if (t) t.textContent = c.site_name; document.title = c.site_name; $('footer').textContent = c.footer_text || ''; S.cities = c.cities || []; S.tileUrl = c.tile_url;
         if (!c.calendar_enabled) { $('view').textContent = 'Kalenteri ei ole käytössä.'; return; }
     } catch (e) { /* asetukset eivät estä tapahtumien näyttöä */ }
+    track('view');
     try { S.events = (await getJson('/api/events?limit=500')).events || []; if (!S.cities.length) S.cities = [...new Set(S.events.map(e => e.city).filter(Boolean))].sort(); refresh(); }
     catch (e) { $('view').replaceChildren(el('div', { class: 'empty' }, el('div', { class: 'big' }, '⚠️'), el('h2', {}, 'Tapahtumien lataus epäonnistui'), el('p', {}, e.message))); }
 })();

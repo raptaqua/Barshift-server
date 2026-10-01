@@ -4,6 +4,7 @@ require __DIR__ . '/../lib/core.php';
 require __DIR__ . '/../lib/auth.php';
 require __DIR__ . '/../lib/settings.php';
 require __DIR__ . '/../lib/admin.php';
+require __DIR__ . '/../lib/stats.php';
 
 set_exception_handler(function (Throwable $e) { error_log((string)$e); fail('Palvelinvirhe', 500); });
 header('X-Content-Type-Options: nosniff'); header('Referrer-Policy: strict-origin-when-cross-origin');   // OSM-karttapalikat vaativat Referer-otsakkeen (muuten 403 Access blocked)
@@ -36,15 +37,17 @@ if ($method === 'GET' && $path === '/api/events') {
     $to = isset($_GET['to']) ? dateStr($_GET['to'], 'to') : date('Y-m-d', strtotime('+' . (int)setting('calendar_days_ahead') . ' days'));
     $limit = max(1, min(500, (int)($_GET['limit'] ?? 200)));
     $city = isset($_GET['city']) ? (string)$_GET['city'] : '';
-    $sql = "SELECT e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city, p.address, p.lat, p.lng, p.website
+    $sql = "SELECT e.id, e.title, e.description, e.date, e.time_start, e.time_end, e.type, e.price_text, e.url, p.name AS pub, p.city, p.address, p.lat, p.lng, p.website
             FROM events e JOIN pubs p ON p.id = e.pub_id WHERE p.status = 'active' AND e.date BETWEEN ? AND ?";
     $types = 'ss'; $args = [$from, $to];
     if ($city !== '') { $sql .= " AND p.city = ?"; $types .= 's'; $args[] = $city; }
     $sql .= " ORDER BY e.date, e.time_start LIMIT $limit";
     $evs = rows(q($sql, $types, $args));
-    foreach ($evs as &$e) { $e['lat'] = $e['lat'] === null ? null : (float)$e['lat']; $e['lng'] = $e['lng'] === null ? null : (float)$e['lng']; } unset($e);
+    foreach ($evs as &$e) { $e['id'] = (int)$e['id']; $e['lat'] = $e['lat'] === null ? null : (float)$e['lat']; $e['lng'] = $e['lng'] === null ? null : (float)$e['lng']; } unset($e);
     out(['events' => $evs]);
 }
+
+if ($method === 'POST' && $path === '/api/track') handleTrack();   // kalenterin käyttötilasto (nimetön)
 
 // ---------- Liittäminen (liitoskoodilla; ei allekirjoitusta, koska avain rekisteröidään tässä) ----------
 if ($method === 'POST' && $path === '/v1/pair') {

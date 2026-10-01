@@ -62,6 +62,7 @@ function handleAdminApi(string $method, string $rel): never {
              'events' => $c("SELECT COUNT(*) c FROM events WHERE date >= CURDATE()"), 'open_shifts' => $c("SELECT COUNT(*) c FROM shifts WHERE status = 'open' AND date >= CURDATE()"),
              'workers' => $c("SELECT COUNT(*) c FROM workers"), 'pending_applications' => $c("SELECT COUNT(*) c FROM applications WHERE status = 'pending'")]);
     }
+    if ($method === 'GET' && $rel === '/stats') out(statsReport((int)($_GET['days'] ?? 30)));
     if ($method === 'GET' && $rel === '/settings') out(['settings' => settingsAll()]);
     if ($method === 'PUT' && $rel === '/settings') { settingsSave(settingsValidate(body())); out(['success' => true, 'settings' => settingsAll()]); }
     if ($method === 'POST' && $rel === '/password') {

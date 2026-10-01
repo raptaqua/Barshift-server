@@ -30,3 +30,11 @@ pre{white-space:pre-wrap;word-break:break-all;background:#F1F5F9;border:1.5px so
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
 .stat{text-align:center;margin:0}.stat b{display:block;font-size:32px;line-height:1.2}.stat span{color:var(--muted)}
 .calcard{border-left:6px solid var(--accent)}
+.bars{display:flex;align-items:flex-end;gap:2px;height:120px;margin:8px 0 4px;border-bottom:1px solid var(--border)}
+.bars .bar{flex:1;height:100%;display:flex;align-items:flex-end;min-width:2px}
+.bars .bar i{display:block;width:100%;min-height:2px;background:var(--accent);border-radius:2px 2px 0 0;opacity:.85}
+.bars .bar:hover i{opacity:1}
+.axis{display:flex;justify-content:space-between;font-size:12px}
+.stat span,.stat small{display:block}
+.stat small{margin-top:4px;font-size:12px}
+.card{overflow-x:auto}
