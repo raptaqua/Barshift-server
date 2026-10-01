@@ -27,6 +27,7 @@ async function start() {
     try { await api('GET', '/me'); } catch (e) { return; }
     const names = { overview: 'Yhteenveto', pubs: 'Baarit', events: 'Tapahtumat', shifts: 'Keikkavuorot', workers: 'Keikkatyöläiset', settings: 'Asetukset' };
     const tabs = h('div', { class: 'tabs' }, Object.entries(names).map(([k, v]) => h('button', { class: k === tab ? 'on' : '', onclick: () => { tab = k; start(); } }, v)),
+        h('a', { href: BASE + '/', target: '_blank', rel: 'noopener' }, h('button', { class: 'ghost' }, 'Avaa julkinen kalenteri ↗')),
         h('button', { class: 'ghost', onclick: async () => { await api('POST', '/logout'); showLogin(); } }, 'Kirjaudu ulos'));
     const body = h('div', {}); app.replaceChildren(tabs, body);
     try { await views[tab](body); } catch (e) { body.append(h('div', { class: 'err' }, e.message)); }
@@ -39,6 +40,14 @@ const views = {
     async overview(b) {
         const o = await api('GET', '/overview');
         const st = (n, l) => h('div', { class: 'card stat' }, h('b', {}, o[n]), h('span', { class: 'muted' }, l));
+        const calUrl = location.origin + BASE + '/';
+        const copy = (text, btn) => async () => { try { await navigator.clipboard.writeText(text); btn.textContent = 'Kopioitu ✓'; } catch (e) { prompt('Kopioi osoite', text); } };
+        const b1 = h('button', { class: 'ghost' }, 'Kopioi osoite'); b1.addEventListener('click', copy(calUrl, b1));
+        const embed = '<iframe src="' + calUrl + '" style="width:100%;height:700px;border:0" title="Tapahtumakalenteri"></iframe>';
+        const b2 = h('button', { class: 'ghost' }, 'Kopioi upotuskoodi'); b2.addEventListener('click', copy(embed, b2));
+        b.append(h('div', { class: 'card' }, h('h2', {}, 'Julkinen tapahtumakalenteri'), h('p', { class: 'muted' }, 'Tämä on sivu, jota kävijät käyttävät: kaikkien liitettyjen baarien julkiset tapahtumat yhdessä paikassa, suodatus kaupungin mukaan.'),
+            h('div', { class: 'row' }, h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, calUrl), h('a', { href: calUrl, target: '_blank', rel: 'noopener' }, h('button', {}, 'Avaa kalenteri')), b1, b2),
+            h('p', { class: 'muted' }, 'Tapahtumat myös koneluettavana (JSON): ', h('a', { href: BASE + '/public/events', target: '_blank', rel: 'noopener' }, calUrl + 'public/events'))));
         b.append(h('div', { class: 'grid' }, st('pubs_active', 'Aktiivista baaria'), st('events', 'Tulevaa tapahtumaa'), st('open_shifts', 'Avointa keikkavuoroa'), st('workers', 'Keikkatyöläistä'), st('pending_applications', 'Käsittelemätöntä hakemusta')));
     },
     async pubs(b) {
